@@ -1,17 +1,19 @@
 """
-实时绘图核心逻辑
+实时绘图控件
 使用 ECharts 创建多子图布局，实现实时数据可视化
+封装了数据更新和增量添加接口，数据格式使用 DataFrame
 """
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Optional
 
 
 class RealtimePlot:
-    """实时多信号绘图类（ECharts 版本）"""
+    """实时多信号绘图控件（ECharts 版本）"""
     
-    def __init__(self, num_signals: int = 20, window_seconds: float = 60.0):
+    def __init__(self, num_signals: int = 50, window_seconds: float = 60.0):
         """
-        初始化实时绘图
+        初始化实时绘图控件
         
         Args:
             num_signals: 信号数量（最多20个）
@@ -20,13 +22,16 @@ class RealtimePlot:
         self.num_signals = min(num_signals, 20)
         self.window_seconds = window_seconds
         self.option = self._create_option()
+        
+        # 内部数据缓存，用于管理时间窗口
+        self._data_buffer: Optional[pd.DataFrame] = None
     
     def _create_option(self):
         """创建 ECharts 配置选项"""
         # 计算每个子图的位置和大小
         # 动态计算高度：信号少时充满页面，信号多时使用最小高度
         min_chart_height = 85  # 最小子图高度 85 像素
-        chart_spacing = 8  # 子图之间的间距
+        chart_spacing = 2  # 子图之间的间距（减小间距让指示线看起来更连续）
         available_height = 800  # 假设可用页面高度约 800px（85vh 的近似值）
         top_bottom_padding = 50  # 顶部和底部的总padding
         
@@ -72,7 +77,9 @@ class RealtimePlot:
                 'right': 70,
                 'top': top,
                 'height': grid_height,  # 根据总高度动态调整
-                'containLabel': True
+                'containLabel': True,
+                'show': False,  # 不显示边框，让指示线更连续
+                'backgroundColor': 'transparent'
             })
             
             # 配置 x 轴（共享时间轴，只在最后一个显示）
@@ -92,15 +99,18 @@ class RealtimePlot:
                     'rotate': 0
                 },
                 'axisPointer': {
-                    'show': True,
+                    'show': True,  # 所有子图都显示 axisPointer
                     'type': 'line',
+                    'snap': False,  # 不吸附到数据点
+                    'z': 100,  # 提高层级，确保显示在最上层
                     'lineStyle': {
-                        'color': '#999',
-                        'width': 2,
-                        'type': 'solid'
+                        'color': '#666',  # 深灰色
+                        'width': 1,
+                        'type': 'solid',
+                        'opacity': 1
                     },
                     'label': {
-                        'show': False  # 禁用 axis pointer label，避免在每个轴上显示时间
+                        'show': False  # 不显示标签
                     }
                 }
             })
@@ -125,7 +135,9 @@ class RealtimePlot:
                 'data': [],
                 'name': f'Signal {i+1}',
                 'smooth': False,
-                'symbol': 'none',
+                'symbol': 'emptyCircle',  # 显示空心圆形数据点
+                'symbolSize': 6,  # 数据点大小（空心点稍大一些更明显）
+                'showSymbol': True,  # 显示数据点标记
                 'lineStyle': {'width': 2},  # 线条稍微粗一点
                 'animation': False,  # 关闭动画以提高性能
                 'large': True,  # 启用大数据量优化
@@ -142,18 +154,29 @@ class RealtimePlot:
             # 设置图表的总高度
             'height': total_height,
             'axisPointer': {
-                'link': [{'xAxisIndex': 'all'}],  # 链接所有 x 轴
-                'label': {
-                    'backgroundColor': '#777'
-                }
+                'link': [{'xAxisIndex': 'all'}],  # 链接所有 x 轴，让指示线贯穿所有子图
+                'type': 'line',
+                'lineStyle': {
+                    'color': '#666',
+                    'width': 1,
+                    'type': 'dashed',
+                    'opacity': 0.6
+                },
+                'triggerOn': 'mousemove'
             },
             'tooltip': {
                 'show': True,
                 'trigger': 'axis',
                 'axisPointer': {
-                    'type': 'cross',
+                    'type': 'line',  # 使用线型指示器
+                    'axis': 'x',
+                    'lineStyle': {
+                        'color': '#999',
+                        'width': 1,
+                        'type': 'solid'
+                    },
                     'label': {
-                        'show': False  # 不在轴上显示 label
+                        'show': False  # 不在轴上显示标签
                     }
                 },
                 'backgroundColor': 'rgba(50, 50, 50, 0.9)',
@@ -182,9 +205,29 @@ class RealtimePlot:
         }
     
     
-    def update_data(self, df: pd.DataFrame):
+    def _trim_data_by_window(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        更新图表数据
+        根据时间窗口裁剪数据
+        
+        Args:
+            df: 输入的 DataFrame
+            
+        Returns:
+            裁剪后的 DataFrame
+        """
+        if df.empty or 'timestamp' not in df.columns:
+            return df
+        
+        # 计算时间窗口的起始时间
+        latest_time = df['timestamp'].max()
+        cutoff_time = latest_time - timedelta(seconds=self.window_seconds)
+        
+        # 过滤数据
+        return df[df['timestamp'] >= cutoff_time].copy()
+    
+    def _update_chart_data(self, df: pd.DataFrame):
+        """
+        将 DataFrame 数据更新到图表配置中
         
         Args:
             df: DataFrame，包含 timestamp 列和所有 signal_* 列
@@ -207,21 +250,91 @@ class RealtimePlot:
         
         # 更新数据缩放范围（显示最近的数据）
         if len(timestamps) > 0:
-            # 计算显示范围（显示最后60秒的数据）
             min_time = timestamps[0]
             max_time = timestamps[-1]
             
             # 更新 dataZoom
             if 'dataZoom' in self.option and len(self.option['dataZoom']) > 0:
-                # 计算百分比范围
                 total_range = max_time - min_time
                 if total_range > 0:
-                    # 显示最后60秒（60000毫秒）
-                    window_ms = 60000
+                    # 显示最后N秒的数据
+                    window_ms = self.window_seconds * 1000
                     if total_range > window_ms:
                         start_percent = ((total_range - window_ms) / total_range) * 100
                         self.option['dataZoom'][0]['start'] = start_percent
                         self.option['dataZoom'][0]['end'] = 100
+    
+    def update_data(self, df: pd.DataFrame):
+        """
+        完全更新图表数据（替换所有数据）
+        
+        Args:
+            df: DataFrame，必须包含 'timestamp' 列和 'signal_1', 'signal_2', ... 列
+               timestamp 列应为 datetime 类型
+        
+        Example:
+            data = pd.DataFrame({
+                'timestamp': [datetime.now(), datetime.now() + timedelta(seconds=1)],
+                'signal_1': [1.0, 2.0],
+                'signal_2': [3.0, 4.0]
+            })
+            plot.update_data(data)
+        """
+        if df.empty:
+            return
+        
+        # 更新内部缓存
+        self._data_buffer = df.copy()
+        
+        # 裁剪到时间窗口
+        trimmed_df = self._trim_data_by_window(self._data_buffer)
+        
+        # 更新图表
+        self._update_chart_data(trimmed_df)
+    
+    def append_data(self, df: pd.DataFrame):
+        """
+        增量添加新数据到图表（追加数据）
+        
+        Args:
+            df: DataFrame，必须包含 'timestamp' 列和 'signal_1', 'signal_2', ... 列
+               timestamp 列应为 datetime 类型
+        
+        Example:
+            new_data = pd.DataFrame({
+                'timestamp': [datetime.now()],
+                'signal_1': [1.5],
+                'signal_2': [3.5]
+            })
+            plot.append_data(new_data)
+        """
+        if df.empty:
+            return
+        
+        # 如果缓存为空，直接赋值
+        if self._data_buffer is None or self._data_buffer.empty:
+            self._data_buffer = df.copy()
+        else:
+            # 追加新数据
+            self._data_buffer = pd.concat([self._data_buffer, df], ignore_index=True)
+            
+            # 按时间戳排序
+            self._data_buffer = self._data_buffer.sort_values('timestamp').reset_index(drop=True)
+        
+        # 裁剪到时间窗口
+        trimmed_df = self._trim_data_by_window(self._data_buffer)
+        
+        # 更新内部缓存为裁剪后的数据（节省内存）
+        self._data_buffer = trimmed_df
+        
+        # 更新图表
+        self._update_chart_data(trimmed_df)
+    
+    def clear_data(self):
+        """清空所有数据"""
+        self._data_buffer = None
+        for i in range(self.num_signals):
+            self.option['series'][i]['data'] = []
     
     def get_option(self) -> dict:
         """
@@ -231,3 +344,12 @@ class RealtimePlot:
             dict: ECharts 配置字典
         """
         return self.option
+    
+    def get_buffered_data(self) -> Optional[pd.DataFrame]:
+        """
+        获取当前缓存的数据
+        
+        Returns:
+            DataFrame 或 None
+        """
+        return self._data_buffer.copy() if self._data_buffer is not None else None

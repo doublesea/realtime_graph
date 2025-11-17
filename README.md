@@ -2,202 +2,303 @@
 
 基于 Python NiceGUI 和 ECharts 的实时多信号绘图系统，支持多个信号的实时数据可视化。
 
-## 功能特性
+> **v2.0 重构版本** - 封装了绘图控件和数据生成器，提供清晰的 DataFrame 接口
 
-- ✅ **实时数据更新**：支持 200ms 更新频率的实时数据绘制
-- ✅ **滑动窗口显示**：数据量过大时自动显示最近 1 分钟的数据
-- ✅ **多子图布局**：支持最多 20 个信号上下排列显示，每个子图独立标题
-- ✅ **共享时间轴**：所有子图共享时间轴，方便对比分析，时间轴仅在底部显示
-- ✅ **智能悬停提示**：鼠标悬停时显示格式化的时间戳（只显示一次）和所有信号的精确数值
-- ✅ **自适应布局**：
-  - 信号少（1-4个）：子图自动变大，充满整个页面
-  - 信号适中（5-10个）：动态调整子图高度，刚好充满页面
-  - 信号多（10个以上）：使用最小高度，页面可滚动查看
-- ✅ **可配置参数**：支持自定义信号数量、更新频率和采样率
-- ✅ **数据模拟**：内置数据生成器，使用正弦波模拟真实设备数据
-- ✅ **高性能渲染**：采用 ECharts 前端渲染，支持大数据量实时更新
+## ✨ 功能特性
 
-## 技术栈
+### 数据处理
+- ✅ **统一数据接口**：所有数据使用 DataFrame 格式
+- ✅ **双模式更新**：支持全量更新（`update_data`）和增量添加（`append_data`）
+- ✅ **自动时间窗口**：内置缓冲区管理，自动裁剪超出窗口的数据
+- ✅ **不同信号周期**：每个信号独立采样周期（1x/2x/3x/5x 倍数）
+
+### 数据可视化
+- ✅ **实时数据更新**：支持 50-1000ms 可调更新频率
+- ✅ **多子图布局**：支持最多 20 个信号上下排列显示
+- ✅ **空心圆点标记**：曲线上显示空心圆形数据点
+- ✅ **贯穿指示线**：鼠标悬停时显示贯穿所有子图的时间指示线
+- ✅ **智能 Tooltip**：格式化显示时间戳和所有信号的精确数值
+- ✅ **自适应高度**：根据信号数量动态调整子图高度
+- ✅ **滚动时间窗口**：默认显示最近 60 秒的数据
+
+### 用户界面
+- ✅ **参数配置**：可调整信号数量（1-20）、更新频率、采样率
+- ✅ **信号信息面板**：显示每个信号的频率、周期、有效采样率
+- ✅ **启动/停止/重置**：完整的控制功能
+
+## 🚀 快速开始
+
+### 安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+### 方式1：启动 Web 界面（推荐）
+
+```bash
+python main.py
+```
+
+然后在浏览器中打开：`http://localhost:8080`
+
+### 方式2：运行示例代码
+
+```bash
+python example_usage.py
+```
+
+示例包含 4 个场景：
+1. 批量生成数据并更新
+2. 逐点生成数据并增量添加
+3. 混合使用（批量加载 + 增量更新）
+4. 清空和重置操作
+
+### 方式3：自定义使用
+
+```python
+from data_generator import DataGenerator
+from realtime_plot import RealtimePlot
+
+# 初始化
+generator = DataGenerator(num_signals=4, base_sample_rate=5.0)
+plot = RealtimePlot(num_signals=4, window_seconds=60.0)
+
+# 批量生成并更新
+data = generator.generate_batch_data(100)
+plot.update_data(data)
+
+# 增量添加
+new_data = generator.generate_next_data()
+plot.append_data(new_data)
+```
+
+更多详情请查看 [QUICKSTART.md](QUICKSTART.md)
+
+## 📦 核心模块
+
+### 1. RealtimePlot（绘图控件）
+
+```python
+from realtime_plot import RealtimePlot
+
+plot = RealtimePlot(num_signals=4, window_seconds=60.0)
+
+# API 接口
+plot.update_data(df)       # 完全更新（替换所有数据）
+plot.append_data(df)       # 增量添加（追加新数据）
+plot.clear_data()          # 清空所有数据
+plot.get_buffered_data()   # 获取当前缓存数据
+plot.get_option()          # 获取 ECharts 配置
+```
+
+**特性：**
+- 内置数据缓冲区管理
+- 自动时间窗口裁剪（节省内存）
+- 数据自动排序
+- 支持增量和全量更新
+
+### 2. DataGenerator（数据生成器）
+
+```python
+from data_generator import DataGenerator
+
+generator = DataGenerator(num_signals=4, base_sample_rate=5.0)
+
+# API 接口
+generator.generate_next_data()        # 生成单个数据点
+generator.generate_batch_data(100)    # 批量生成
+generator.get_signal_info()           # 获取信号参数信息
+generator.get_all_data()              # 获取所有累积数据
+generator.get_recent_data(60.0)       # 获取最近 N 秒数据
+generator.reset()                     # 重置（保留配置）
+```
+
+**特性：**
+- 每个信号独立采样周期（1x/2x/3x/5x）
+- 随机生成频率、相位、幅度、噪声
+- 支持逐点和批量生成
+- 可查询信号参数信息
+
+## 📊 数据格式规范
+
+所有数据接口使用统一的 DataFrame 格式：
+
+```python
+import pandas as pd
+from datetime import datetime
+
+data = pd.DataFrame({
+    'timestamp': [datetime.now(), ...],  # 必须：datetime 类型
+    'signal_1': [1.0, 2.0, ...],        # 信号 1 的数值
+    'signal_2': [3.0, 4.0, ...],        # 信号 2 的数值
+    # ... 更多信号
+})
+```
+
+**注意事项：**
+- `timestamp` 列必须为 `datetime` 类型
+- 信号列命名规范：`signal_1`, `signal_2`, ..., `signal_N`
+- 数值列应为 `float` 类型
+
+## 🎯 核心特性说明
+
+### 不同信号不同周期
+
+每个信号有独立的采样周期倍数，更贴近真实场景：
+
+```python
+# 基础采样率 5Hz 的情况下：
+Signal 1: 周期倍数 3x → 有效采样率 1.67 Hz
+Signal 2: 周期倍数 2x → 有效采样率 2.5 Hz
+Signal 3: 周期倍数 5x → 有效采样率 1.0 Hz
+Signal 4: 周期倍数 1x → 有效采样率 5.0 Hz
+```
+
+查看信号参数信息：
+
+```python
+info = generator.get_signal_info()
+print(info)
+```
+
+输出示例：
+```
+  signal  frequency  amplitude  offset  period_multiplier  effective_sample_rate
+signal_1   0.498271   2.559382     0.0                  3               1.666667
+signal_2   0.177997   2.732352     0.3                  2               2.500000
+signal_3   0.425444   2.443998     0.6                  5               1.000000
+signal_4   0.190912   1.608484     0.9                  2               2.500000
+```
+
+### 自动时间窗口管理
+
+绘图控件自动管理时间窗口，超出窗口的数据会被自动裁剪：
+
+```python
+# 初始化 60 秒时间窗口
+plot = RealtimePlot(num_signals=4, window_seconds=60.0)
+
+# 添加数据时，自动保留最近 60 秒的数据
+plot.append_data(new_data)  # 旧数据自动裁剪
+```
+
+## 📁 项目结构
+
+```
+graph/
+├── main.py                 # 主程序（Web 界面）
+├── realtime_plot.py        # 绘图控件
+├── data_generator.py       # 数据生成器
+├── example_usage.py        # 使用示例
+├── requirements.txt        # 依赖配置
+├── README.md              # 本文档
+└── QUICKSTART.md          # 快速开始指南
+```
+
+## 🛠️ 技术栈
 
 - **NiceGUI** (v1.4+)：Python Web UI 框架
 - **ECharts** (v5.4+)：高性能数据可视化库（前端渲染）
 - **Pandas** (v2.0+)：数据处理和分析
 - **NumPy** (v1.24+)：数值计算
 
-## 安装
+## 📖 典型使用场景
 
-1. 克隆仓库：
-```bash
-git clone https://github.com/doublesea/realtime_graph.git
-cd realtime_graph
-```
-
-2. 安装依赖：
-```bash
-pip install -r requirements.txt
-```
-
-## 使用
-
-运行主程序：
-
-```bash
-python main.py
-```
-
-然后在浏览器中访问显示的地址（默认 http://localhost:8080）。
-
-### 界面操作
-
-1. **配置参数**：
-   - 设置信号数量（1-20，默认4）
-   - 设置更新频率（50-1000ms，默认200ms）
-   - 设置采样频率（0.1-100Hz，默认5Hz）
-
-2. **控制按钮**：
-   - **启动**：开始实时绘图
-   - **停止**：暂停数据更新
-   - **重置**：清空数据并重新配置
-
-3. **图表交互**：
-   - **悬停查看**：鼠标悬停在曲线上查看精确数值
-   - **Ctrl + 滚轮**：缩放时间轴
-   - **拖拽**：平移查看历史数据
-
-## 项目结构
-
-```
-.
-├── main.py              # 主程序入口，NiceGUI界面和控制逻辑
-├── data_generator.py    # 数据生成器，模拟实时信号数据
-├── realtime_plot.py     # 实时绘图模块，ECharts配置
-├── requirements.txt     # 依赖包列表
-└── README.md           # 项目文档
-```
-
-## 核心模块说明
-
-### data_generator.py
-
-数据生成器类，用于模拟实时设备数据：
-
-- **生成方式**：使用正弦波 + 随机噪声模拟真实信号
-- **数据格式**：DataFrame格式，包含timestamp和多个signal列
-- **滑动窗口**：支持获取指定时间窗口内的数据（默认60秒）
-
-### realtime_plot.py
-
-ECharts 图表配置和管理：
-
-- **多子图布局**：每个信号独立子图，垂直排列
-- **动态高度**：根据信号数量自动调整子图高度
-- **时间轴配置**：格式化显示（HH:mm:ss.SSS）
-- **性能优化**：
-  - 禁用动画（animation: false）
-  - 大数据模式（large: true）
-  - LTTB采样算法（sampling: 'lttb'）
-
-### main.py
-
-主程序和用户界面：
-
-- **NiceGUI 界面**：参数配置、控制按钮、图表显示
-- **定时器**：使用 ui.timer 实现定时数据更新
-- **自定义 Tooltip**：通过 JavaScript 注入实现格式化的悬停提示
-
-## 配置说明
-
-### 推荐配置
-
-| 场景 | 信号数量 | 更新频率 | 采样频率 |
-|------|---------|---------|---------|
-| 快速预览 | 4 | 200ms | 5Hz |
-| 详细分析 | 8-10 | 200ms | 10Hz |
-| 高频采集 | 4-6 | 100ms | 20Hz |
-| 多路监控 | 15-20 | 500ms | 5Hz |
-
-### 性能建议
-
-- 信号数量 × 更新频率 ≤ 100（如：20信号 × 5Hz = 100）
-- 采样率不要超过更新频率的2倍
-- 浏览器内存充足时可增加信号数量
-
-## Tooltip 显示格式
-
-悬停时显示的信息格式：
-
-```
-┌──────────────────────────┐
-│ Time: 14:23:45.123       │ ← 时间戳只显示一次
-├──────────────────────────┤
-│ ● Signal 1      2.345    │
-│ ● Signal 2     -1.234    │
-│ ● Signal 3      0.567    │
-│ ● Signal 4      3.456    │
-└──────────────────────────┘
-```
-
-## 自定义数据源
-
-要使用真实设备数据，修改 `data_generator.py` 中的 `DataGenerator` 类：
+### 场景1：实时数据流
 
 ```python
-def generate_next_data(self):
-    """生成下一个数据点"""
-    # 替换为从真实设备读取数据
-    # 返回格式：timestamp 和 signal_1, signal_2, ... 的值
-    # 例如：
-    # timestamp = datetime.now()
-    # values = read_from_device()  # 从设备读取数据
-    # self.data['timestamp'].append(timestamp)
-    # for i, value in enumerate(values):
-    #     self.data[f'signal_{i+1}'].append(value)
+generator = DataGenerator(num_signals=4, base_sample_rate=5.0)
+plot = RealtimePlot(num_signals=4, window_seconds=60.0)
+
+# 实时循环
+while True:
+    new_data = generator.generate_next_data()
+    plot.append_data(new_data)
+    # ... 更新显示
 ```
 
-## 已知限制
+### 场景2：加载历史数据
 
-- 最多支持 20 个信号同时显示
-- 数据窗口固定为 60 秒
-- 时间戳显示为本地时间
+```python
+# 先加载大量历史数据
+historical_data = generator.generate_batch_data(num_points=1000)
+plot.update_data(historical_data)
 
-## 故障排除
+# 然后切换到实时模式
+while True:
+    new_data = generator.generate_next_data()
+    plot.append_data(new_data)
+```
 
-### 图表不显示
+### 场景3：周期性批量更新
 
-- 检查浏览器控制台是否有 JavaScript 错误
-- 确认已安装所有依赖包
-- 尝试刷新浏览器页面
+```python
+while True:
+    batch = generator.generate_batch_data(num_points=10)
+    plot.append_data(batch)
+    time.sleep(1)
+```
 
-### 更新卡顿
+## 🎨 界面操作
 
-- 减少信号数量
-- 降低更新频率
-- 降低采样频率
+- **信号数量**：设置要显示的信号数量（1-20）
+- **更新频率**：设置图表刷新频率（50-1000ms）
+- **基础采样率**：设置数据生成频率（0.1-100Hz）
+- **启动按钮**：开始实时绘图
+- **停止按钮**：暂停更新
+- **重置按钮**：清空数据并重新初始化
 
-### Tooltip 显示异常
+## 🔍 调试技巧
 
-- 刷新浏览器页面
-- 清除浏览器缓存
-- 确认使用现代浏览器（Chrome 90+、Edge 90+、Firefox 88+）
+### 查看信号参数
 
-## 未来改进
+```python
+info = generator.get_signal_info()
+print(info)
+```
 
-- [ ] 支持自定义数据源接入
-- [ ] 添加数据导出功能（CSV/Excel）
-- [ ] 支持多种图表类型切换（折线图/散点图/柱状图）
-- [ ] 添加信号统计信息显示（最大值/最小值/平均值）
-- [ ] 支持主题切换（亮色/暗色）
-- [ ] 添加信号颜色自定义
-- [ ] 支持Y轴范围手动设置
+### 查看缓存数据
 
-## 许可证
+```python
+buffered = plot.get_buffered_data()
+print(f"缓存数据点数: {len(buffered)}")
+print(f"时间范围: {buffered['timestamp'].min()} 到 {buffered['timestamp'].max()}")
+```
+
+### 检查数据格式
+
+```python
+data = generator.generate_next_data()
+print(data.dtypes)  # 检查数据类型
+print(data.columns)  # 检查列名
+```
+
+## 📝 版本历史
+
+### v2.0 (2025-11-17) - 重构版本
+- ✅ 封装绘图控件，提供 `update_data` 和 `append_data` 接口
+- ✅ 重构数据生成器，支持不同信号不同周期
+- ✅ 添加信号参数信息面板
+- ✅ 统一使用 DataFrame 数据格式
+- ✅ 内置数据缓冲区和时间窗口管理
+- ✅ 曲线上显示空心圆点标记
+
+### v1.0 - 初始版本
+- 基础实时多信号绘图功能
+- ECharts 多子图布局
+- 数据生成器
+
+## 📄 许可证
 
 MIT License
 
-## 贡献
+## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
 
-## 联系方式
+---
 
-如有问题，请在 GitHub 上提交 Issue。
+**开发日期**: 2025-11-17  
+**版本**: v2.0  
+**状态**: ✅ 生产就绪
