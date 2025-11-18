@@ -76,6 +76,16 @@ def create_ui():
         ui.label('信号参数信息').classes('text-h6 mb-2')
         info_card = ui.html('初始化后显示信号参数...', sanitize=False).classes('text-sm')
     
+    # 使用提示面板
+    with ui.card().classes('w-full p-2').style('background-color: #e3f2fd;'):
+        ui.html('''
+        <div style="font-size: 12px; color: #1565c0;">
+            <b>💡 缩放提示：</b>
+            <span style="margin-left:10px;">• 拖动底部滑块或使用 Ctrl+滚轮 缩放时间轴</span>
+            <span style="margin-left:10px;">• 放大查看细节时自动显示数据点，缩小查看全局时只显示线条</span>
+        </div>
+        ''', sanitize=False)
+    
     # 创建绘图区域
     temp_plot = RealtimePlot(num_signals=4, window_seconds=60.0)
     option = temp_plot.get_option()
@@ -229,6 +239,68 @@ def create_ui():
                         }}, false);
                     }});
                     
+                    // 监听缩放事件，根据可见区域的数据点密度动态调整点的显示
+                    el.chart.on('dataZoom', function(params) {{
+                        const option = el.chart.getOption();
+                        // 使用第一个dataZoom的范围（inside和slider是同步的）
+                        const dataZoom = option.dataZoom && option.dataZoom.length > 0 ? option.dataZoom[0] : null;
+                        
+                        if (!dataZoom) return;
+                        
+                        // 遍历所有系列，根据可见范围内的数据点数量决定是否显示点
+                        const series = option.series;
+                        let needUpdate = false;
+                        
+                        for (let i = 0; i < series.length; i++) {{
+                            if (!series[i].data || series[i].data.length === 0) continue;
+                            
+                            const totalPoints = series[i].data.length;
+                            const startPercent = dataZoom.start !== undefined ? dataZoom.start : 0;
+                            const endPercent = dataZoom.end !== undefined ? dataZoom.end : 100;
+                            
+                            // 计算可见范围内的数据点数量
+                            const visibleStartIndex = Math.floor(totalPoints * startPercent / 100);
+                            const visibleEndIndex = Math.ceil(totalPoints * endPercent / 100);
+                            const visiblePointCount = visibleEndIndex - visibleStartIndex;
+                            
+                            // 根据可见数据点密度决定是否显示点标记
+                            let showSymbol = series[i].showSymbol;
+                            let symbolSize = series[i].symbolSize;
+                            
+                            if (visiblePointCount > 200) {{
+                                // 密集：不显示点
+                                showSymbol = false;
+                                symbolSize = 4;
+                            }} else if (visiblePointCount > 100) {{
+                                // 中等：显示小点
+                                showSymbol = true;
+                                symbolSize = 4;
+                            }} else if (visiblePointCount > 30) {{
+                                // 适中：显示中等点
+                                showSymbol = true;
+                                symbolSize = 5;
+                            }} else {{
+                                // 稀疏：显示大点
+                                showSymbol = true;
+                                symbolSize = 6;
+                            }}
+                            
+                            // 检查是否需要更新
+                            if (series[i].showSymbol !== showSymbol || series[i].symbolSize !== symbolSize) {{
+                                series[i].showSymbol = showSymbol;
+                                series[i].symbolSize = symbolSize;
+                                needUpdate = true;
+                            }}
+                        }}
+                        
+                        // 如果有变化，更新图表
+                        if (needUpdate) {{
+                            el.chart.setOption({{
+                                series: series
+                            }}, false, false);
+                        }}
+                    }});
+                    
                     clearInterval(interval);
                 }} else if (attempts++ >= maxAttempts) {{
                     clearInterval(interval);
@@ -296,6 +368,8 @@ def create_ui():
         new_option = realtime_plot.get_option()
         for i in range(len(new_option['series'])):
             plot_element.options['series'][i]['data'] = new_option['series'][i]['data']
+            plot_element.options['series'][i]['showSymbol'] = new_option['series'][i]['showSymbol']
+            plot_element.options['series'][i]['symbolSize'] = new_option['series'][i]['symbolSize']
         plot_element.update()
         
         # 固定更新频率：每0.5秒更新一次
@@ -319,11 +393,13 @@ def create_ui():
             # 将新数据传给绘图控件（内部缓存管理，自动裁剪到时间窗口）
             realtime_plot.append_data(batch_data)
             
-            # 只更新 series 的 data 部分（传输时间窗口内的数据）
+            # 更新 series 的关键配置（数据和显示样式）
             new_option = realtime_plot.get_option()
             for i in range(len(new_option['series'])):
-                # 只更新 data 字段，避免传输整个 series 配置
+                # 更新数据和根据密度自动调整的显示配置
                 plot_element.options['series'][i]['data'] = new_option['series'][i]['data']
+                plot_element.options['series'][i]['showSymbol'] = new_option['series'][i]['showSymbol']
+                plot_element.options['series'][i]['symbolSize'] = new_option['series'][i]['symbolSize']
             
             # 更新状态显示（显示当前数据点数量）
             total_data_points = len(realtime_plot._data_buffer) if realtime_plot._data_buffer is not None else 0

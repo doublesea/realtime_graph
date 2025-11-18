@@ -33,7 +33,7 @@ class RealtimePlot:
         min_chart_height = 85  # 最小子图高度 85 像素
         chart_spacing = 2  # 子图之间的间距（减小间距让指示线看起来更连续）
         available_height = 800  # 假设可用页面高度约 800px（85vh 的近似值）
-        top_bottom_padding = 50  # 顶部和底部的总padding
+        top_bottom_padding = 80  # 顶部和底部的总padding（增加以容纳滑块）
         
         # 计算理想的子图高度（充满页面）
         ideal_height = (available_height - top_bottom_padding - chart_spacing * (self.num_signals + 1)) / self.num_signals
@@ -177,6 +177,26 @@ class RealtimePlot:
                     'filterMode': 'none',  # 不过滤数据，只缩放视图
                     'zoomOnMouseWheel': 'ctrl',  # Ctrl+滚轮缩放
                     'moveOnMouseMove': True  # 鼠标移动平移
+                },
+                {
+                    'type': 'slider',
+                    'show': True,
+                    'xAxisIndex': list(range(self.num_signals)),  # 所有 x 轴同步缩放
+                    'start': 0,
+                    'end': 100,
+                    'bottom': 10,
+                    'height': 20,
+                    'filterMode': 'none',
+                    'showDetail': True,  # 显示详细信息
+                    'showDataShadow': False,  # 不显示数据阴影
+                    'borderColor': '#ccc',
+                    'fillerColor': 'rgba(25, 118, 210, 0.2)',
+                    'handleStyle': {
+                        'color': '#1976d2'
+                    },
+                    'textStyle': {
+                        'color': '#333'
+                    }
                 }
             ],
             'animation': False  # 关闭全局动画
@@ -213,7 +233,7 @@ class RealtimePlot:
     
     def _update_chart_data(self, df: pd.DataFrame):
         """
-        将 DataFrame 数据更新到图表配置中
+        将 DataFrame 数据更新到图表配置中，并根据数据点密度自动调整显示方式
         
         Args:
             df: DataFrame，包含 timestamp 列和所有 signal_* 列
@@ -237,6 +257,23 @@ class RealtimePlot:
                         for ts, val in zip(timestamps, df[signal_name])
                         if pd.notna(val)]  # 只保留非 NaN 的数据点
                 self.option['series'][i]['data'] = data
+                
+                # 根据数据点密度自动调整是否显示符号（点标记）
+                # 如果数据点超过150个，只显示线条，不显示点
+                # 这样可以保持图表清晰，避免太密集
+                data_point_count = len(data)
+                if data_point_count > 150:
+                    # 密集数据：只显示线条
+                    self.option['series'][i]['showSymbol'] = False
+                    self.option['series'][i]['symbolSize'] = 4
+                elif data_point_count > 50:
+                    # 中等密度：显示小点
+                    self.option['series'][i]['showSymbol'] = True
+                    self.option['series'][i]['symbolSize'] = 4
+                else:
+                    # 稀疏数据：显示正常大小的点
+                    self.option['series'][i]['showSymbol'] = True
+                    self.option['series'][i]['symbolSize'] = 6
         
         # 更新数据缩放范围（显示最近的数据）
         if len(timestamps) > 0:
