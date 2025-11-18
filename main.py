@@ -3,6 +3,8 @@
 整合 NiceGUI 界面、ECharts 图表和数据生成器
 重构版本：初始化绘图控件，周期性调用数据生成并更新曲线
 """
+import json
+import pandas as pd
 from nicegui import ui
 from typing import Optional
 from data_generator import DataGenerator
@@ -29,7 +31,6 @@ def create_ui():
     stop_btn = None
     reset_btn = None
     signal_count_input = None
-    update_rate_input = None
     sample_rate_input = None
     info_card = None
     
@@ -58,14 +59,8 @@ def create_ui():
                 precision=0
             ).classes('w-24')
             
-            ui.label('更新频率 (ms):')
-            update_rate_input = ui.number(
-                label='', 
-                value=200, 
-                min=50, 
-                max=1000,
-                precision=0
-            ).classes('w-24')
+            ui.label('更新频率:')
+            ui.label('500 ms (固定)').classes('font-bold text-blue-600')
             
             ui.label('基础采样率 (Hz):')
             sample_rate_input = ui.number(
@@ -148,14 +143,38 @@ def create_ui():
             // 按信号编号排序（Signal 1, 2, 3, 4）
             signals.sort((a, b) => a.index - b.index);
             
-            // 显示排序后的信号（保留3位小数）
-            for (let i = 0; i < signals.length; i++) {{
-                const sig = signals[i];
-                html += '<div style="margin:3px 0">';
-                html += '<span style="display:inline-block;width:10px;height:10px;background-color:' + sig.color + ';border-radius:50%;margin-right:8px"></span>';
-                html += '<span style="display:inline-block;width:80px">' + sig.name + '</span>';
-                html += '<span style="font-weight:bold">' + sig.value.toFixed(3) + '</span>';
+            // 分栏显示信号（每列最多12个）
+            const maxPerColumn = 12;
+            const numColumns = Math.ceil(signals.length / maxPerColumn);
+            
+            if (numColumns > 1) {{
+                // 多列布局
+                html += '<div style="display:flex;gap:15px;">';
+                for (let col = 0; col < numColumns; col++) {{
+                    html += '<div style="flex:0 0 auto;">';
+                    const start = col * maxPerColumn;
+                    const end = Math.min(start + maxPerColumn, signals.length);
+                    for (let i = start; i < end; i++) {{
+                        const sig = signals[i];
+                        html += '<div style="margin:2px 0;white-space:nowrap;display:flex;align-items:center;">';
+                        html += '<span style="width:8px;height:8px;background-color:' + sig.color + ';border-radius:50%;margin-right:6px;flex-shrink:0;"></span>';
+                        html += '<span style="width:65px;font-size:11px;flex-shrink:0;">' + sig.name + '</span>';
+                        html += '<span style="font-weight:bold;font-size:11px;margin-left:4px;">' + sig.value.toFixed(3) + '</span>';
+                        html += '</div>';
+                    }}
+                    html += '</div>';
+                }}
                 html += '</div>';
+            }} else {{
+                // 单列布局
+                for (let i = 0; i < signals.length; i++) {{
+                    const sig = signals[i];
+                    html += '<div style="margin:3px 0">';
+                    html += '<span style="display:inline-block;width:10px;height:10px;background-color:' + sig.color + ';border-radius:50%;margin-right:8px"></span>';
+                    html += '<span style="display:inline-block;width:80px">' + sig.name + '</span>';
+                    html += '<span style="font-weight:bold">' + sig.value.toFixed(3) + '</span>';
+                    html += '</div>';
+                }}
             }}
             
             return html;
@@ -267,27 +286,50 @@ def create_ui():
         stop_btn.enable()
         status_label.text = '状态: 运行中'
         
-        # 获取更新频率（毫秒转秒）
-        update_interval = float(update_rate_input.value) / 1000.0
+        # 生成初始数据（生成几个数据点以便图表有内容显示）
+        sample_rate = float(sample_rate_input.value) if sample_rate_input.value is not None else 100.0
+        initial_points = int(sample_rate * 0.5)  # 0.5秒的数据点
+        initial_batch = data_generator.generate_batch_data(initial_points)
+        realtime_plot.append_data(initial_batch)
+        
+        # 更新图表显示初始数据
+        new_option = realtime_plot.get_option()
+        for i in range(len(new_option['series'])):
+            plot_element.options['series'][i]['data'] = new_option['series'][i]['data']
+        plot_element.update()
+        
+        # 固定更新频率：每0.5秒更新一次
+        update_interval = 0.5  # 秒
         
         def update_plot():
             """
             周期性调用数据生成，并将生成数据传给绘图控件更新曲线
-            使用 append_data 接口实现增量更新
+            每次生成0.5秒的数据批次，按照规定的采样率
             """
             if not is_running or data_generator is None or realtime_plot is None:
                 return
             
-            # 调用数据生成器生成新数据
-            new_data = data_generator.generate_next_data()
+            # 计算0.5秒内应该生成多少个基础时间点
+            sample_rate = data_generator.base_sample_rate
+            num_points = int(sample_rate * update_interval)
             
-            # 将新数据传给绘图控件（使用 append_data 接口）
-            realtime_plot.append_data(new_data)
+            # 批量生成0.5秒的数据
+            batch_data = data_generator.generate_batch_data(num_points)
             
-            # 更新图表显示（更新整个 series 配置，确保 connectNulls 等配置生效）
+            # 将新数据传给绘图控件（内部缓存管理，自动裁剪到时间窗口）
+            realtime_plot.append_data(batch_data)
+            
+            # 只更新 series 的 data 部分（传输时间窗口内的数据）
             new_option = realtime_plot.get_option()
             for i in range(len(new_option['series'])):
-                plot_element.options['series'][i] = new_option['series'][i]
+                # 只更新 data 字段，避免传输整个 series 配置
+                plot_element.options['series'][i]['data'] = new_option['series'][i]['data']
+            
+            # 更新状态显示（显示当前数据点数量）
+            total_data_points = len(realtime_plot._data_buffer) if realtime_plot._data_buffer is not None else 0
+            status_label.text = f'状态: 运行中 (生成 {num_points} 点/批, 缓存 {total_data_points} 点)'
+            
+            # 使用 update() 更新图表
             plot_element.update()
         
         # 启动定时器

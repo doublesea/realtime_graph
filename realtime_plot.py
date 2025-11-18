@@ -165,8 +165,8 @@ class RealtimePlot:
                     'fontSize': 12
                 },
                 'padding': [10, 12],
-                'extraCssText': 'box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); max-height: 400px; overflow-y: auto;',
-                'confine': True
+                'extraCssText': 'box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); max-height: 90vh; max-width: 800px; overflow-y: auto;',
+                'confine': False  # 允许tooltip超出图表边界，避免被截断
             },
             'dataZoom': [
                 {
@@ -185,7 +185,7 @@ class RealtimePlot:
     
     def _trim_data_by_window(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        根据时间窗口裁剪数据
+        根据时间窗口裁剪数据，并限制最大数据点数量
         
         Args:
             df: 输入的 DataFrame
@@ -201,7 +201,15 @@ class RealtimePlot:
         cutoff_time = latest_time - timedelta(seconds=self.window_seconds)
         
         # 过滤数据
-        return df[df['timestamp'] >= cutoff_time].copy()
+        trimmed_df = df[df['timestamp'] >= cutoff_time].copy()
+        
+        # 额外限制：如果数据点超过2000个，只保留最新的2000个
+        # 这样可以避免传输过多数据，同时保持足够的可视化精度
+        max_points = 2000
+        if len(trimmed_df) > max_points:
+            trimmed_df = trimmed_df.tail(max_points).copy()
+        
+        return trimmed_df
     
     def _update_chart_data(self, df: pd.DataFrame):
         """
