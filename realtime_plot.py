@@ -99,18 +99,9 @@ class RealtimePlot:
                     'rotate': 0
                 },
                 'axisPointer': {
-                    'show': True,  # 所有子图都显示 axisPointer
-                    'type': 'line',
-                    'snap': False,  # 不吸附到数据点
-                    'z': 100,  # 提高层级，确保显示在最上层
+                    'show': True,  # 需要启用才能触发 tooltip
                     'lineStyle': {
-                        'color': '#666',  # 深灰色
-                        'width': 1,
-                        'type': 'solid',
-                        'opacity': 1
-                    },
-                    'label': {
-                        'show': False  # 不显示标签
+                        'opacity': 0  # 设置为完全透明，不显示线
                     }
                 }
             })
@@ -152,29 +143,18 @@ class RealtimePlot:
             # 设置图表的总高度
             'height': total_height,
             'axisPointer': {
-                'link': [{'xAxisIndex': 'all'}],  # 链接所有 x 轴，让指示线贯穿所有子图
-                'type': 'line',
+                'link': [{'xAxisIndex': 'all'}],  # 链接所有 x 轴
                 'lineStyle': {
-                    'color': '#666',
-                    'width': 1,
-                    'type': 'dashed',
-                    'opacity': 0.6
-                },
-                'triggerOn': 'mousemove'
+                    'opacity': 0  # 设置为完全透明，不显示 ECharts 的线，只用自定义线
+                }
             },
             'tooltip': {
                 'show': True,
                 'trigger': 'axis',
                 'axisPointer': {
-                    'type': 'line',  # 使用线型指示器
-                    'axis': 'x',
+                    'type': 'line',
                     'lineStyle': {
-                        'color': '#999',
-                        'width': 1,
-                        'type': 'solid'
-                    },
-                    'label': {
-                        'show': False  # 不在轴上显示标签
+                        'opacity': 0  # 完全透明，不显示 tooltip 的指示线
                     }
                 },
                 'backgroundColor': 'rgba(50, 50, 50, 0.9)',

@@ -116,22 +116,54 @@ def create_ui():
                         tooltip: {{
                             formatter: function(params) {{
                                 if (!params || params.length === 0) return '';
-                                const date = new Date(params[0].value[0]);
+                                
+                                // 只显示一次时间（使用第一个有效参数的时间戳）
+                                let timestamp = null;
+                                for (let i = 0; i < params.length; i++) {{
+                                    if (params[i].value && params[i].value[0]) {{
+                                        timestamp = params[i].value[0];
+                                        break;
+                                    }}
+                                }}
+                                
+                                if (!timestamp) return '';
+                                
+                                // 格式化时间，精确到毫秒
+                                const date = new Date(timestamp);
                                 const h = String(date.getHours()).padStart(2, '0');
                                 const m = String(date.getMinutes()).padStart(2, '0');
                                 const s = String(date.getSeconds()).padStart(2, '0');
                                 const ms = String(date.getMilliseconds()).padStart(3, '0');
                                 const time = h + ':' + m + ':' + s + '.' + ms;
                                 
-                                let html = '<div style="font-weight:bold;margin-bottom:8px;border-bottom:1px solid #666;padding-bottom:5px;">Time: ' + time + '</div>';
+                                // 时间只显示一次（在顶部）
+                                let html = '<div style="font-weight:bold;margin-bottom:8px;border-bottom:1px solid #666;padding-bottom:5px;">' + time + '</div>';
                                 
+                                // 收集有值的信号，并按信号编号排序
+                                let signals = [];
                                 for (let i = 0; i < params.length; i++) {{
                                     const p = params[i];
-                                    const v = p.value[1];
+                                    const v = p.value ? p.value[1] : null;
+                                    if (v != null) {{
+                                        signals.push({{
+                                            name: p.seriesName,
+                                            value: v,
+                                            color: p.color,
+                                            index: parseInt(p.seriesName.replace('Signal ', ''))
+                                        }});
+                                    }}
+                                }}
+                                
+                                // 按信号编号排序（Signal 1, 2, 3, 4）
+                                signals.sort((a, b) => a.index - b.index);
+                                
+                                // 显示排序后的信号（保留3位小数）
+                                for (let i = 0; i < signals.length; i++) {{
+                                    const sig = signals[i];
                                     html += '<div style="margin:3px 0">';
-                                    html += '<span style="display:inline-block;width:10px;height:10px;background-color:' + p.color + ';border-radius:50%;margin-right:8px"></span>';
-                                    html += '<span style="display:inline-block;width:80px">' + p.seriesName + '</span>';
-                                    html += '<span style="font-weight:bold">' + (v != null ? Number(v).toFixed(3) : 'N/A') + '</span>';
+                                    html += '<span style="display:inline-block;width:10px;height:10px;background-color:' + sig.color + ';border-radius:50%;margin-right:8px"></span>';
+                                    html += '<span style="display:inline-block;width:80px">' + sig.name + '</span>';
+                                    html += '<span style="font-weight:bold">' + sig.value.toFixed(3) + '</span>';
                                     html += '</div>';
                                 }}
                                 
@@ -140,20 +172,31 @@ def create_ui():
                         }}
                     }});
                     
-                    const chartContainer = el.querySelector('div');
-                    if (chartContainer && !customLine) {{
-                        customLine = document.createElement('div');
-                        customLine.style.cssText = 'position: absolute; top: 0; bottom: 0; width: 1px; background-color: rgba(102, 102, 102, 0.6); pointer-events: none; display: none; z-index: 999;';
-                        chartContainer.appendChild(customLine);
+                    // 创建完全贯穿的垂直指示线
+                    if (!customLine) {{
+                        // 获取 ECharts 容器和父容器
+                        const echartsDom = el.chart.getDom();
+                        const parentContainer = echartsDom.parentElement;
                         
-                        chartContainer.addEventListener('mousemove', function(e) {{
-                            const rect = chartContainer.getBoundingClientRect();
-                            const x = e.clientX - rect.left;
+                        // 创建指示线元素
+                        customLine = document.createElement('div');
+                        customLine.style.cssText = 'position: absolute; top: 0; height: 100%; width: 1px; background-color: rgba(102, 102, 102, 0.8); pointer-events: none; display: none; z-index: 9999;';
+                        
+                        // 确保父容器是相对定位
+                        parentContainer.style.position = 'relative';
+                        parentContainer.appendChild(customLine);
+                        
+                        // 监听鼠标移动事件
+                        echartsDom.addEventListener('mousemove', function(e) {{
+                            const rect = echartsDom.getBoundingClientRect();
+                            const parentRect = parentContainer.getBoundingClientRect();
+                            const x = e.clientX - parentRect.left;
                             customLine.style.left = x + 'px';
                             customLine.style.display = 'block';
                         }});
                         
-                        chartContainer.addEventListener('mouseleave', function() {{
+                        // 监听鼠标离开事件
+                        echartsDom.addEventListener('mouseleave', function() {{
                             customLine.style.display = 'none';
                         }});
                     }}
