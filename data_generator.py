@@ -17,11 +17,11 @@ class DataGenerator:
         初始化数据生成器
         
         Args:
-            num_signals: 信号通道数量（最多20个）
+            num_signals: 信号通道数量（最多100个）
             base_sample_rate: 基础采样频率（Hz，每秒采样次数）
             enum_signal_indices: 枚举信号的索引列表（从0开始），例如 [2, 3] 表示 signal_3 和 signal_4 是枚举类型
         """
-        self.num_signals = min(num_signals, 20)
+        self.num_signals = min(num_signals, 100)
         self.base_sample_rate = base_sample_rate
         self.base_interval = 1.0 / base_sample_rate  # 基础采样间隔（秒）
         

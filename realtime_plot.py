@@ -16,11 +16,11 @@ class RealtimePlot:
         初始化实时绘图控件
         
         Args:
-            num_signals: 信号数量（最多20个）
+            num_signals: 信号数量（最多100个）
             window_seconds: 数据窗口大小（秒）
             signal_types: 信号类型配置字典，格式：{'signal_1': {'type': 'numeric'/'enum', 'enum_labels': {0: 'OFF', 1: 'ON'}}}
         """
-        self.num_signals = min(num_signals, 20)
+        self.num_signals = min(num_signals, 100)
         self.window_seconds = window_seconds
         self.signal_types = signal_types or {}
         self.option = self._create_option()

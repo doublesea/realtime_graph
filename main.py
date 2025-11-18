@@ -55,7 +55,7 @@ def create_ui():
                 label='', 
                 value=4, 
                 min=1, 
-                max=20,
+                max=100,
                 precision=0
             ).classes('w-24')
             

@@ -55,6 +55,11 @@ class RealtimeChartWidget:
         <script>
         window.enumLabelsMap = {{}};
         
+        // 定义全局更新函数
+        window.updateEnumLabels = function(newLabels) {{
+            window.enumLabelsMap = newLabels;
+        }};
+        
         // Tooltip formatter 函数
         window.customTooltipFormatter = function(params) {{
             if (!params || params.length === 0) return '';
@@ -189,15 +194,32 @@ class RealtimeChartWidget:
                     
                     // 创建垂直指示线
                     if (!customLine) {{
-                        const chartContainer = el.chart.getDom().parentElement;
+                        // 获取图表的 DOM 元素和容器
+                        const chartDom = el.chart.getDom();
+                        const chartContainer = chartDom.parentElement;
                         
                         customLine = document.createElement('div');
-                        customLine.style.cssText = 'position: absolute; top: 0; bottom: 0; width: 2px; background-color: rgba(102, 102, 102, 0.8); pointer-events: none; display: none; z-index: 9999;';
+                        customLine.style.cssText = 'position: absolute; top: 0; width: 2px; background-color: rgba(102, 102, 102, 0.8); pointer-events: none; display: none; z-index: 9999;';
                         customLine.id = 'custom-indicator-line';
                         
+                        // 动态设置竖线高度
+                        const updateLineHeight = function() {{
+                            const height = chartDom.offsetHeight || chartContainer.offsetHeight;
+                            customLine.style.height = height + 'px';
+                        }};
+                        
+                        // 确保容器是相对定位
                         chartContainer.style.position = 'relative';
                         chartContainer.appendChild(customLine);
                         
+                        // 初始设置高度
+                        updateLineHeight();
+                        
+                        // 监听窗口大小变化和图表更新
+                        window.addEventListener('resize', updateLineHeight);
+                        el.chart.on('finished', updateLineHeight);
+                        
+                        // 鼠标移动事件
                         chartContainer.addEventListener('mousemove', function(e) {{
                             const rect = chartContainer.getBoundingClientRect();
                             const x = e.clientX - rect.left;
@@ -320,19 +342,38 @@ class RealtimeChartWidget:
         enum_labels_json = {}
         for signal_name, config in signal_types.items():
             if config['type'] == 'enum':
-                signal_index = int(signal_name.split('_')[1])
+                # signal_name 是 'signal_X'，X 是显示编号（从1开始）
+                # 直接使用这个编号作为键，与 tooltip 中的 Signal X 匹配
+                signal_display_number = int(signal_name.split('_')[1])
                 # 将整数键转换为字符串键以便 JSON 序列化
-                enum_labels_json[str(signal_index)] = {str(k): v for k, v in config['enum_labels'].items()}
+                enum_labels_json[str(signal_display_number)] = {str(k): v for k, v in config['enum_labels'].items()}
         
         # 更新枚举标签映射到全局变量
         enum_labels_js = json.dumps(enum_labels_json)
-        ui.add_body_html(f'''
-        <script>
-            (function() {{
+        
+        # 使用 run_javascript 强制立即执行更新（而不是 add_body_html）
+        update_script = f'''
+            if (typeof window.updateEnumLabels === 'function') {{
+                window.updateEnumLabels({enum_labels_js});
+            }} else {{
                 window.enumLabelsMap = {enum_labels_js};
-            }})();
-        </script>
-        ''')
+            }}
+        '''
+        
+        # 通过 run_javascript 立即执行
+        try:
+            ui.run_javascript(update_script)
+        except Exception as e:
+            # 如果 run_javascript 失败，使用 add_body_html 作为备选方案
+            import time
+            timestamp = int(time.time() * 1000)
+            ui.add_body_html(f'''
+            <script id="enum-labels-{timestamp}">
+                (function() {{
+                    {update_script}
+                }})();
+            </script>
+            ''')
     
     def update_chart_option(self, new_option: Dict[str, Any], exclude_tooltip: bool = True):
         """
