@@ -2,7 +2,7 @@
 
 基于 Python NiceGUI 和 ECharts 的实时多信号绘图系统，支持多个信号的实时数据可视化。
 
-> **v2.0 重构版本** - 封装了绘图控件和数据生成器，提供清晰的 DataFrame 接口
+> **v2.1 枚举值支持** - 新增枚举类型信号支持，可显示状态信号和开关量
 
 ## ✨ 功能特性
 
@@ -11,19 +11,21 @@
 - ✅ **双模式更新**：支持全量更新（`update_data`）和增量添加（`append_data`）
 - ✅ **自动时间窗口**：内置缓冲区管理，自动裁剪超出窗口的数据
 - ✅ **不同信号周期**：每个信号独立采样周期（1x/2x/3x/5x 倍数）
+- ✅ **枚举值支持**：支持枚举类型信号（状态信号），可配置枚举值和文本标签
 
 ### 数据可视化
 - ✅ **实时数据更新**：支持 50-1000ms 可调更新频率
 - ✅ **多子图布局**：支持最多 20 个信号上下排列显示
-- ✅ **空心圆点标记**：曲线上显示空心圆形数据点
+- ✅ **空心圆点标记**：数值信号曲线上显示空心圆形数据点
+- ✅ **阶梯图显示**：枚举信号使用阶梯图展示状态变化
 - ✅ **贯穿指示线**：鼠标悬停时显示贯穿所有子图的时间指示线
-- ✅ **智能 Tooltip**：格式化显示时间戳和所有信号的精确数值
+- ✅ **智能 Tooltip**：数值信号显示精确数值，枚举信号显示文本标签
 - ✅ **自适应高度**：根据信号数量动态调整子图高度
 - ✅ **滚动时间窗口**：默认显示最近 60 秒的数据
 
 ### 用户界面
 - ✅ **参数配置**：可调整信号数量（1-20）、更新频率、采样率
-- ✅ **信号信息面板**：显示每个信号的频率、周期、有效采样率
+- ✅ **信号信息面板**：显示每个信号的类型、周期、采样率、枚举值定义等详细信息
 - ✅ **启动/停止/重置**：完整的控制功能
 
 ## 🚀 快速开始
@@ -60,9 +62,22 @@ python example_usage.py
 from data_generator import DataGenerator
 from realtime_plot import RealtimePlot
 
-# 初始化
+# 初始化（默认最后两个信号为枚举类型）
 generator = DataGenerator(num_signals=4, base_sample_rate=5.0)
-plot = RealtimePlot(num_signals=4, window_seconds=60.0)
+
+# 构建信号类型配置
+signal_types = {}
+for i, params in enumerate(generator.signal_params):
+    signal_name = f'signal_{i+1}'
+    if params['type'] == 'enum':
+        signal_types[signal_name] = {
+            'type': 'enum',
+            'enum_labels': params['enum_labels']
+        }
+    else:
+        signal_types[signal_name] = {'type': 'numeric'}
+
+plot = RealtimePlot(num_signals=4, window_seconds=60.0, signal_types=signal_types)
 
 # 批量生成并更新
 data = generator.generate_batch_data(100)
@@ -142,6 +157,37 @@ data = pd.DataFrame({
 - 数值列应为 `float` 类型
 
 ## 🎯 核心特性说明
+
+### 枚举值配置与显示
+
+系统支持枚举类型的信号（如状态信号、开关量等），默认情况下最后两个信号为枚举类型。
+
+**特性：**
+- **阶梯图显示**：枚举信号使用阶梯图（step line）展示状态变化
+- **离散刻度**：Y轴显示离散的状态值
+- **文本标签**：Tooltip 中显示枚举值的文本含义而非数字
+- **状态转换**：自动模拟状态转换（可配置转换概率）
+
+**自定义枚举信号：**
+
+```python
+# 指定哪些信号为枚举类型（索引从0开始）
+generator = DataGenerator(
+    num_signals=4, 
+    base_sample_rate=100.0,
+    enum_signal_indices=[2, 3]  # signal_3 和 signal_4 为枚举类型
+)
+```
+
+**内置枚举类型：**
+- `default`: 4个状态（OFF, IDLE, RUNNING, ERROR）
+- `boolean`: 2个状态（OFF, ON）
+- `level`: 3个状态（低, 中, 高）
+
+**信号信息面板**显示：
+- 信号类型（数值/枚举）
+- 枚举值定义（值:标签）
+- 枚举信号以黄色背景高亮显示
 
 ### 不同信号不同周期
 
@@ -284,6 +330,13 @@ print(data.columns)  # 检查列名
 
 ## 📝 版本历史
 
+### v2.1 (2025-11-18) - 枚举值支持
+- ✅ 支持枚举类型信号（状态信号、开关量等）
+- ✅ 枚举信号使用阶梯图显示，清晰展示状态变化
+- ✅ Tooltip 显示枚举值的文本标签
+- ✅ 信号信息面板显示信号类型和枚举值定义
+- ✅ 内置三种枚举类型（default, boolean, level）
+
 ### v2.0 (2025-11-17) - 重构版本
 - ✅ 封装绘图控件，提供 `update_data` 和 `append_data` 接口
 - ✅ 重构数据生成器，支持不同信号不同周期
@@ -307,6 +360,6 @@ MIT License
 
 ---
 
-**开发日期**: 2025-11-17  
-**版本**: v2.0  
+**开发日期**: 2025-11-18  
+**版本**: v2.1  
 **状态**: ✅ 生产就绪

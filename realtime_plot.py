@@ -11,16 +11,18 @@ from typing import Optional
 class RealtimePlot:
     """实时多信号绘图控件（ECharts 版本）"""
     
-    def __init__(self, num_signals: int = 50, window_seconds: float = 60.0):
+    def __init__(self, num_signals: int = 50, window_seconds: float = 60.0, signal_types: Optional[dict] = None):
         """
         初始化实时绘图控件
         
         Args:
             num_signals: 信号数量（最多20个）
             window_seconds: 数据窗口大小（秒）
+            signal_types: 信号类型配置字典，格式：{'signal_1': {'type': 'numeric'/'enum', 'enum_labels': {0: 'OFF', 1: 'ON'}}}
         """
         self.num_signals = min(num_signals, 20)
         self.window_seconds = window_seconds
+        self.signal_types = signal_types or {}
         self.option = self._create_option()
         
         # 内部数据缓存，用于管理时间窗口
@@ -53,6 +55,21 @@ class RealtimePlot:
         series = []
         titles = []  # 添加标题数组
         
+        # 计算所需的最大左边距（为枚举标签预留足够空间）
+        # 检查是否有枚举信号，并找出最长的标签
+        max_label_length = 0
+        for i in range(self.num_signals):
+            signal_name = f'signal_{i+1}'
+            signal_config = self.signal_types.get(signal_name, {'type': 'numeric'})
+            if signal_config['type'] == 'enum':
+                enum_labels = signal_config.get('enum_labels', {})
+                for label in enum_labels.values():
+                    max_label_length = max(max_label_length, len(label))
+        
+        # 根据最长标签动态计算左边距（每个字符约7像素，最少70像素）
+        grid_left = max(70, min(max_label_length * 7, 200))  # 限制最大200像素
+        title_left = 10  # 标题放在最左边
+        
         for i in range(self.num_signals):
             # 配置 grid 位置（垂直排列，使用像素定位）
             top = chart_spacing + i * (chart_height_per_signal + chart_spacing) + 30
@@ -64,7 +81,7 @@ class RealtimePlot:
             # 配置标题（显示在每个子图的左上角）
             titles.append({
                 'text': f'Signal {i+1}',
-                'left': 80,  # 与 grid 的 left 对齐
+                'left': title_left,  # 与 grid 的 left 对齐
                 'top': top - title_offset,  # 在 grid 上方
                 'textStyle': {
                     'fontSize': 13,
@@ -73,11 +90,11 @@ class RealtimePlot:
                 }
             })
             grids.append({
-                'left': 70,
+                'left': grid_left,  # 统一的左边距，确保时间轴对齐
                 'right': 70,
                 'top': top,
                 'height': grid_height,  # 根据总高度动态调整
-                'containLabel': True,
+                'containLabel': False,  # 禁用自动调整，严格使用left值
                 'show': False,  # 不显示边框，让指示线更连续
                 'backgroundColor': 'transparent'
             })
@@ -100,6 +117,9 @@ class RealtimePlot:
                 },
                 'axisPointer': {
                     'show': True,  # 需要启用才能触发 tooltip
+                    'label': {
+                        'show': False  # 禁用axisPointer的标签，避免显示额外的时间戳
+                    },
                     'lineStyle': {
                         'opacity': 0  # 设置为完全透明，不显示线
                     }
@@ -107,32 +127,79 @@ class RealtimePlot:
             })
             
             # 配置 y 轴（不再显示 name，因为已经在左上角有标题了）
-            y_axes.append({
-                'type': 'value',
-                'gridIndex': i,
-                'splitLine': {'show': True, 'lineStyle': {'type': 'dashed', 'color': '#e0e0e0'}},
-                'scale': True,  # 自动缩放以适应数据
-                'axisLabel': {
-                    'fontSize': 9
-                },
-                'splitNumber': 3  # 减少刻度线数量，节省空间
-            })
+            signal_name = f'signal_{i+1}'
+            signal_config = self.signal_types.get(signal_name, {'type': 'numeric'})
             
-            # 配置系列（折线图）
-            series.append({
-                'type': 'line',
-                'xAxisIndex': i,
-                'yAxisIndex': i,
-                'data': [],
-                'name': f'Signal {i+1}',
-                'smooth': False,
-                'symbol': 'emptyCircle',  # 显示空心圆形数据点
-                'symbolSize': 6,  # 数据点大小
-                'showSymbol': True,  # 显示数据点标记
-                'connectNulls': False,  # 关键：不连接空值，NaN 处断开曲线且不显示点
-                'lineStyle': {'width': 2},  # 线条宽度
-                'animation': False  # 关闭动画以提高性能
-            })
+            if signal_config['type'] == 'enum':
+                # 枚举信号的 y 轴：使用类别轴直接显示文本
+                enum_labels = signal_config.get('enum_labels', {})
+                enum_values = sorted(enum_labels.keys())
+                
+                # 构建类别数组（按值的顺序）
+                categories = [enum_labels[v] for v in enum_values]
+                
+                y_axes.append({
+                    'type': 'category',  # 使用类别轴
+                    'gridIndex': i,
+                    'data': categories,  # 直接设置类别数据
+                    'splitLine': {'show': True, 'lineStyle': {'type': 'dashed', 'color': '#e0e0e0'}},
+                    'axisLabel': {
+                        'fontSize': 8,  # 稍微减小字体
+                        'interval': 0,  # 显示所有标签
+                        'width': grid_left - 15,  # 设置标签宽度限制
+                        'overflow': 'truncate',  # 超出部分截断
+                        'ellipsis': '...'  # 截断时显示省略号
+                    },
+                    '_enum_labels': enum_labels,  # 存储枚举标签，供后续使用
+                    '_enum_values': enum_values  # 存储枚举值列表
+                })
+            else:
+                # 数值信号的 y 轴：自动缩放
+                y_axes.append({
+                    'type': 'value',
+                    'gridIndex': i,
+                    'splitLine': {'show': True, 'lineStyle': {'type': 'dashed', 'color': '#e0e0e0'}},
+                    'scale': True,  # 自动缩放以适应数据
+                    'axisLabel': {
+                        'fontSize': 9
+                    },
+                    'splitNumber': 3  # 减少刻度线数量，节省空间
+                })
+            
+            # 配置系列（折线图或阶梯图）
+            if signal_config['type'] == 'enum':
+                # 枚举信号：使用阶梯图
+                series.append({
+                    'type': 'line',
+                    'xAxisIndex': i,
+                    'yAxisIndex': i,
+                    'data': [],
+                    'name': f'Signal {i+1}',
+                    'step': 'end',  # 阶梯图样式
+                    'smooth': False,
+                    'symbol': 'circle',  # 实心圆形数据点
+                    'symbolSize': 6,
+                    'showSymbol': True,
+                    'connectNulls': False,
+                    'lineStyle': {'width': 2},
+                    'animation': False
+                })
+            else:
+                # 数值信号：使用普通折线图
+                series.append({
+                    'type': 'line',
+                    'xAxisIndex': i,
+                    'yAxisIndex': i,
+                    'data': [],
+                    'name': f'Signal {i+1}',
+                    'smooth': False,
+                    'symbol': 'emptyCircle',  # 显示空心圆形数据点
+                    'symbolSize': 6,  # 数据点大小
+                    'showSymbol': True,  # 显示数据点标记
+                    'connectNulls': False,  # 关键：不连接空值，NaN 处断开曲线且不显示点
+                    'lineStyle': {'width': 2},  # 线条宽度
+                    'animation': False  # 关闭动画以提高性能
+                })
         
         return {
             'grid': grids,
@@ -144,6 +211,9 @@ class RealtimePlot:
             'height': total_height,
             'axisPointer': {
                 'link': [{'xAxisIndex': 'all'}],  # 链接所有 x 轴
+                'label': {
+                    'show': False  # 全局禁用axisPointer标签
+                },
                 'lineStyle': {
                     'opacity': 0  # 设置为完全透明，不显示 ECharts 的线，只用自定义线
                 }
@@ -153,6 +223,9 @@ class RealtimePlot:
                 'trigger': 'axis',
                 'axisPointer': {
                     'type': 'line',
+                    'label': {
+                        'show': False  # 禁用tooltip的axisPointer标签
+                    },
                     'lineStyle': {
                         'opacity': 0  # 完全透明，不显示 tooltip 的指示线
                     }
@@ -187,7 +260,7 @@ class RealtimePlot:
                     'bottom': 10,
                     'height': 20,
                     'filterMode': 'none',
-                    'showDetail': True,  # 显示详细信息
+                    'showDetail': False,  # 不显示详细信息，避免多个时间戳标签
                     'showDataShadow': False,  # 不显示数据阴影
                     'borderColor': '#ccc',
                     'fillerColor': 'rgba(25, 118, 210, 0.2)',

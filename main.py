@@ -106,14 +106,17 @@ def create_ui():
     with ui.card().classes('w-full').style('overflow-y: scroll; max-height: 85vh; padding: 10px;'):
         plot_element = ui.echart(option).style(f'height: {chart_height}px; width: 100%; min-height: {chart_height}px;')
         
-        # 定义全局的 tooltip formatter 函数
+        # 初始化枚举标签映射
         ui.add_body_html(f'''
         <script>
-        // 定义全局的 tooltip formatter 函数
+        window.enumLabelsMap = {{}};
+        
+        // Tooltip formatter 函数
         window.customTooltipFormatter = function(params) {{
             if (!params || params.length === 0) return '';
+            if (!Array.isArray(params)) params = [params];
             
-            // 只显示一次时间（使用第一个有效参数的时间戳）
+            // 获取时间戳
             let timestamp = null;
             for (let i = 0; i < params.length; i++) {{
                 if (params[i].value && params[i].value[0]) {{
@@ -124,41 +127,58 @@ def create_ui():
             
             if (!timestamp) return '';
             
-            // 格式化时间，精确到毫秒
+            // 格式化时间（日期+时间+毫秒）
             const date = new Date(timestamp);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
             const h = String(date.getHours()).padStart(2, '0');
             const m = String(date.getMinutes()).padStart(2, '0');
             const s = String(date.getSeconds()).padStart(2, '0');
             const ms = String(date.getMilliseconds()).padStart(3, '0');
-            const time = h + ':' + m + ':' + s + '.' + ms;
+            const time = year + '-' + month + '-' + day + ' ' + h + ':' + m + ':' + s + '.' + ms;
             
-            // 时间只显示一次（在顶部）
             let html = '<div style="font-weight:bold;margin-bottom:8px;border-bottom:1px solid #666;padding-bottom:5px;">' + time + '</div>';
             
-            // 收集有值的信号，并按信号编号排序
-            let signals = [];
+            // 收集信号数据（去重）
+            const signalsMap = new Map();
             for (let i = 0; i < params.length; i++) {{
                 const p = params[i];
                 const v = p.value ? p.value[1] : null;
                 if (v != null) {{
-                    signals.push({{
+                    const signalIndex = parseInt(p.seriesName.replace('Signal ', ''));
+                    
+                    if (signalsMap.has(signalIndex)) continue;
+                    
+                    // 枚举类型显示文本标签，数值类型显示数字
+                    let displayValue;
+                    const enumMap = window.enumLabelsMap[signalIndex.toString()];
+                    if (enumMap) {{
+                        const enumVal = Math.round(v);
+                        displayValue = enumMap[enumVal.toString()] || enumVal.toString();
+                    }} else {{
+                        displayValue = v.toFixed(3);
+                    }}
+                    
+                    signalsMap.set(signalIndex, {{
                         name: p.seriesName,
                         value: v,
+                        displayValue: displayValue,
                         color: p.color,
-                        index: parseInt(p.seriesName.replace('Signal ', ''))
+                        index: signalIndex
                     }});
                 }}
             }}
             
-            // 按信号编号排序（Signal 1, 2, 3, 4）
+            // 按信号编号排序
+            let signals = Array.from(signalsMap.values());
             signals.sort((a, b) => a.index - b.index);
             
-            // 分栏显示信号（每列最多12个）
+            // 分栏显示
             const maxPerColumn = 12;
             const numColumns = Math.ceil(signals.length / maxPerColumn);
             
             if (numColumns > 1) {{
-                // 多列布局
                 html += '<div style="display:flex;gap:15px;">';
                 for (let col = 0; col < numColumns; col++) {{
                     html += '<div style="flex:0 0 auto;">';
@@ -169,20 +189,19 @@ def create_ui():
                         html += '<div style="margin:2px 0;white-space:nowrap;display:flex;align-items:center;">';
                         html += '<span style="width:8px;height:8px;background-color:' + sig.color + ';border-radius:50%;margin-right:6px;flex-shrink:0;"></span>';
                         html += '<span style="width:65px;font-size:11px;flex-shrink:0;">' + sig.name + '</span>';
-                        html += '<span style="font-weight:bold;font-size:11px;margin-left:4px;">' + sig.value.toFixed(3) + '</span>';
+                        html += '<span style="font-weight:bold;font-size:11px;margin-left:4px;">' + sig.displayValue + '</span>';
                         html += '</div>';
                     }}
                     html += '</div>';
                 }}
                 html += '</div>';
             }} else {{
-                // 单列布局
                 for (let i = 0; i < signals.length; i++) {{
                     const sig = signals[i];
                     html += '<div style="margin:3px 0">';
                     html += '<span style="display:inline-block;width:10px;height:10px;background-color:' + sig.color + ';border-radius:50%;margin-right:8px"></span>';
                     html += '<span style="display:inline-block;width:80px">' + sig.name + '</span>';
-                    html += '<span style="font-weight:bold">' + sig.value.toFixed(3) + '</span>';
+                    html += '<span style="font-weight:bold">' + sig.displayValue + '</span>';
                     html += '</div>';
                 }}
             }}
@@ -190,7 +209,7 @@ def create_ui():
             return html;
         }};
         
-        // 设置 tooltip formatter 和自定义指示线
+        // 初始化 tooltip 和指示线
         (function setupTooltip() {{
             let attempts = 0;
             const maxAttempts = 20;
@@ -199,44 +218,86 @@ def create_ui():
             const interval = setInterval(function() {{
                 const el = getElement({plot_element.id});
                 if (el && el.chart) {{
-                    // 应用自定义 formatter
                     el.chart.setOption({{
                         tooltip: {{
                             formatter: window.customTooltipFormatter
                         }}
-                    }}, false);  // notMerge=false，合并而不是替换
+                    }}, false);
                     
-                    // 创建完全贯穿的垂直指示线
+                    // 同步所有 X 轴范围
+                    const option = el.chart.getOption();
+                    if (option.xAxis && option.xAxis.length > 0) {{
+                        const firstXAxis = option.xAxis[0];
+                        const xMin = firstXAxis.min;
+                        const xMax = firstXAxis.max;
+                        
+                        if (xMin !== undefined && xMax !== undefined) {{
+                            for (let i = 0; i < option.xAxis.length; i++) {{
+                                option.xAxis[i].min = xMin;
+                                option.xAxis[i].max = xMax;
+                            }}
+                            
+                            el.chart.setOption({{
+                                xAxis: option.xAxis
+                            }}, false);
+                        }}
+                    }}
+                    
+                    // 创建垂直指示线
                     if (!customLine) {{
-                        const echartsDom = el.chart.getDom();
+                        const chartContainer = el.chart.getDom().parentElement;
                         
-                        // 创建指示线，直接添加到 echartsDom 上
                         customLine = document.createElement('div');
-                        customLine.style.cssText = 'position: absolute; top: 0; bottom: 0; width: 1px; background-color: rgba(102, 102, 102, 0.8); pointer-events: none; display: none; z-index: 9999;';
+                        customLine.style.cssText = 'position: absolute; top: 0; bottom: 0; width: 2px; background-color: rgba(102, 102, 102, 0.8); pointer-events: none; display: none; z-index: 9999;';
+                        customLine.id = 'custom-indicator-line';
                         
-                        // 确保 echartsDom 是相对定位
-                        echartsDom.style.position = 'relative';
-                        echartsDom.appendChild(customLine);
+                        chartContainer.style.position = 'relative';
+                        chartContainer.appendChild(customLine);
                         
-                        echartsDom.addEventListener('mousemove', function(e) {{
-                            const rect = echartsDom.getBoundingClientRect();
+                        chartContainer.addEventListener('mousemove', function(e) {{
+                            const rect = chartContainer.getBoundingClientRect();
                             const x = e.clientX - rect.left;
                             customLine.style.left = x + 'px';
                             customLine.style.display = 'block';
                         }});
                         
-                        echartsDom.addEventListener('mouseleave', function() {{
+                        chartContainer.addEventListener('mouseleave', function() {{
                             customLine.style.display = 'none';
                         }});
                     }}
                     
-                    // 监听图表更新事件，确保 formatter 不被覆盖
+                    // 监听图表更新事件，确保 formatter 不被覆盖，并同步 X 轴
                     el.chart.on('finished', function() {{
                         el.chart.setOption({{
                             tooltip: {{
                                 formatter: window.customTooltipFormatter
                             }}
                         }}, false);
+                        
+                        // 每次图表更新后，同步所有 X 轴的范围
+                        const currentOption = el.chart.getOption();
+                        if (currentOption.xAxis && currentOption.xAxis.length > 1) {{
+                            const firstXAxis = currentOption.xAxis[0];
+                            const xMin = firstXAxis.min;
+                            const xMax = firstXAxis.max;
+                            
+                            if (xMin !== undefined && xMax !== undefined) {{
+                                let needUpdate = false;
+                                for (let i = 1; i < currentOption.xAxis.length; i++) {{
+                                    if (currentOption.xAxis[i].min !== xMin || currentOption.xAxis[i].max !== xMax) {{
+                                        currentOption.xAxis[i].min = xMin;
+                                        currentOption.xAxis[i].max = xMax;
+                                        needUpdate = true;
+                                    }}
+                                }}
+                                
+                                if (needUpdate) {{
+                                    el.chart.setOption({{
+                                        xAxis: currentOption.xAxis
+                                    }}, false);
+                                }}
+                            }}
+                        }}
                     }});
                     
                     // 监听缩放事件，根据可见区域的数据点密度动态调整点的显示
@@ -320,15 +381,37 @@ def create_ui():
         # 初始化数据生成器
         data_generator = DataGenerator(num_signals=num_signals, base_sample_rate=sample_rate)
         
+        # 构建信号类型配置
+        signal_types = {}
+        for i, params in enumerate(data_generator.signal_params):
+            signal_name = f'signal_{i+1}'
+            if params['type'] == 'enum':
+                signal_types[signal_name] = {
+                    'type': 'enum',
+                    'enum_labels': params['enum_labels']
+                }
+            else:
+                signal_types[signal_name] = {'type': 'numeric'}
+        
         # 初始化绘图控件
-        realtime_plot = RealtimePlot(num_signals=num_signals, window_seconds=60.0)
+        realtime_plot = RealtimePlot(num_signals=num_signals, window_seconds=60.0, signal_types=signal_types)
         
         # 更新信号信息显示
         signal_info = data_generator.get_signal_info()
-        info_html = '<table style="width:100%; font-size:11px; border-collapse: collapse;">'
-        info_html += '<tr style="background-color:#f0f0f0; font-weight:bold;"><th>信号</th><th>采样周期(ms)</th><th>频率(Hz)</th><th>幅度</th><th>偏移</th><th>有效采样率(Hz)</th></tr>'
+        info_html = '<table style="width:100%; font-size:10px; border-collapse: collapse;">'
+        info_html += '<tr style="background-color:#f0f0f0; font-weight:bold;"><th>信号</th><th>类型</th><th>周期(ms)</th><th>采样率(Hz)</th><th>频率</th><th>幅度</th><th>偏移</th><th>枚举值</th></tr>'
         for _, row in signal_info.iterrows():
-            info_html += f'<tr style="border-bottom:1px solid #ddd;"><td>{row["signal"]}</td><td><b>{row["sample_period_ms"]:.0f}</b></td><td>{row["frequency"]:.2f}</td><td>{row["amplitude"]:.2f}</td><td>{row["offset"]:.2f}</td><td>{row["effective_sample_rate"]:.1f}</td></tr>'
+            # 根据类型设置背景色
+            bg_color = '#fff8e1' if row['type'] == 'enum' else '#ffffff'
+            type_label = '<span style="color:#ff6f00;">枚举</span>' if row['type'] == 'enum' else '数值'
+            
+            # 格式化显示
+            freq_str = '-' if row['frequency'] == '-' else f"{row['frequency']:.2f}"
+            amp_str = '-' if row['amplitude'] == '-' else f"{row['amplitude']:.2f}"
+            offset_str = '-' if row['offset'] == '-' else f"{row['offset']:.2f}"
+            enum_str = '-' if row['enum_values'] == '-' else f'<div style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{row["enum_values"]}">{row["enum_values"]}</div>'
+            
+            info_html += f'<tr style="border-bottom:1px solid #ddd; background-color:{bg_color};"><td><b>{row["signal"]}</b></td><td>{type_label}</td><td>{row["sample_period_ms"]:.0f}</td><td>{row["effective_sample_rate"]:.1f}</td><td>{freq_str}</td><td>{amp_str}</td><td>{offset_str}</td><td>{enum_str}</td></tr>'
         info_html += '</table>'
         info_card.content = info_html
         
@@ -342,6 +425,24 @@ def create_ui():
         
         plot_element._props['style'] = f'height: {new_height}px; width: 100%; min-height: {new_height}px;'
         plot_element.update()
+        
+        # 更新 JavaScript 中的枚举标签映射
+        enum_labels_json = {}
+        for signal_name, config in signal_types.items():
+            if config['type'] == 'enum':
+                signal_index = int(signal_name.split('_')[1])
+                # 将整数键转换为字符串键以便 JSON 序列化
+                enum_labels_json[str(signal_index)] = {str(k): v for k, v in config['enum_labels'].items()}
+        
+        # 更新枚举标签映射到全局变量
+        enum_labels_js = json.dumps(enum_labels_json)
+        ui.add_body_html(f'''
+        <script>
+            (function() {{{{
+                window.enumLabelsMap = {enum_labels_js};
+            }}}})();
+        </script>
+        ''')
     
     def start_plotting():
         """启动实时绘图"""
