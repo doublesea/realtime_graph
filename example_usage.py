@@ -14,6 +14,7 @@ from realtime_plot import RealtimePlot
 def example_1_batch_generation():
     """
     示例 1：批量生成数据并使用 update_data 更新图表
+    注意：不同信号有不同的采样周期，非采样时间点的值为 NaN（空值）
     """
     print("=" * 60)
     print("示例 1：批量生成数据")
@@ -26,12 +27,23 @@ def example_1_batch_generation():
     signal_info = generator.get_signal_info()
     print("\n信号参数信息：")
     print(signal_info.to_string(index=False))
+    print("\n注意：period_multiplier 表示采样周期倍数")
+    print("例如：倍数为3表示每3个基础周期采样1次，其余时间点为NaN")
     
     # 批量生成 100 个数据点
     print("\n生成 100 个数据点...")
     batch_data = generator.generate_batch_data(num_points=100)
     print(f"生成的数据形状: {batch_data.shape}")
     print(f"时间范围: {batch_data['timestamp'].min()} 到 {batch_data['timestamp'].max()}")
+    
+    # 统计每个信号的有效采样点数
+    print("\n每个信号的有效采样统计（共100个时间点）:")
+    for col in batch_data.columns:
+        if col != 'timestamp':
+            valid_count = batch_data[col].notna().sum()
+            nan_count = batch_data[col].isna().sum()
+            print(f"  {col}: 有效={valid_count}, 空值={nan_count}")
+    
     print("\n前 5 行数据:")
     print(batch_data.head())
     

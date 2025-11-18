@@ -70,9 +70,9 @@ def create_ui():
             ui.label('基础采样率 (Hz):')
             sample_rate_input = ui.number(
                 label='', 
-                value=5.0, 
+                value=100.0,  # 默认100Hz (10ms基础周期)
                 min=0.1, 
-                max=100.0,
+                max=1000.0,
                 precision=1
             ).classes('w-24')
     
@@ -182,10 +182,10 @@ def create_ui():
         
         # 更新信号信息显示
         signal_info = data_generator.get_signal_info()
-        info_html = '<table style="width:100%; font-size:12px; border-collapse: collapse;">'
-        info_html += '<tr style="background-color:#f0f0f0; font-weight:bold;"><th>信号</th><th>频率(Hz)</th><th>幅度</th><th>偏移</th><th>周期倍数</th><th>有效采样率(Hz)</th></tr>'
+        info_html = '<table style="width:100%; font-size:11px; border-collapse: collapse;">'
+        info_html += '<tr style="background-color:#f0f0f0; font-weight:bold;"><th>信号</th><th>采样周期(ms)</th><th>频率(Hz)</th><th>幅度</th><th>偏移</th><th>有效采样率(Hz)</th></tr>'
         for _, row in signal_info.iterrows():
-            info_html += f'<tr style="border-bottom:1px solid #ddd;"><td>{row["signal"]}</td><td>{row["frequency"]:.2f}</td><td>{row["amplitude"]:.2f}</td><td>{row["offset"]:.2f}</td><td>{row["period_multiplier"]}</td><td>{row["effective_sample_rate"]:.2f}</td></tr>'
+            info_html += f'<tr style="border-bottom:1px solid #ddd;"><td>{row["signal"]}</td><td><b>{row["sample_period_ms"]:.0f}</b></td><td>{row["frequency"]:.2f}</td><td>{row["amplitude"]:.2f}</td><td>{row["offset"]:.2f}</td><td>{row["effective_sample_rate"]:.1f}</td></tr>'
         info_html += '</table>'
         info_card.content = info_html
         
@@ -231,10 +231,10 @@ def create_ui():
             # 将新数据传给绘图控件（使用 append_data 接口）
             realtime_plot.append_data(new_data)
             
-            # 更新图表显示（只更新 series 数据，性能更好）
+            # 更新图表显示（更新整个 series 配置，确保 connectNulls 等配置生效）
             new_option = realtime_plot.get_option()
             for i in range(len(new_option['series'])):
-                plot_element.options['series'][i]['data'] = new_option['series'][i]['data']
+                plot_element.options['series'][i] = new_option['series'][i]
             plot_element.update()
         
         # 启动定时器

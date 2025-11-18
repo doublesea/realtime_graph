@@ -136,13 +136,11 @@ class RealtimePlot:
                 'name': f'Signal {i+1}',
                 'smooth': False,
                 'symbol': 'emptyCircle',  # 显示空心圆形数据点
-                'symbolSize': 6,  # 数据点大小（空心点稍大一些更明显）
+                'symbolSize': 6,  # 数据点大小
                 'showSymbol': True,  # 显示数据点标记
-                'lineStyle': {'width': 2},  # 线条稍微粗一点
-                'animation': False,  # 关闭动画以提高性能
-                'large': True,  # 启用大数据量优化
-                'largeThreshold': 500,  # 超过500个点启用优化
-                'sampling': 'lttb'  # 使用 LTTB 采样算法，保持曲线形状
+                'connectNulls': False,  # 关键：不连接空值，NaN 处断开曲线且不显示点
+                'lineStyle': {'width': 2},  # 线条宽度
+                'animation': False  # 关闭动画以提高性能
             })
         
         return {
@@ -245,7 +243,11 @@ class RealtimePlot:
             signal_name = f'signal_{i+1}'
             if signal_name in df.columns:
                 # ECharts 时间序列数据格式：[[timestamp, value], ...]
-                data = [[ts, float(val)] for ts, val in zip(timestamps, df[signal_name])]
+                # 关键改进：只传递有效数据点，跳过 NaN 值
+                # 这样 ECharts 只会在有数据的时间点显示点和连线
+                data = [[ts, float(val)] 
+                        for ts, val in zip(timestamps, df[signal_name])
+                        if pd.notna(val)]  # 只保留非 NaN 的数据点
                 self.option['series'][i]['data'] = data
         
         # 更新数据缩放范围（显示最近的数据）

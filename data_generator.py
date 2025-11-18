@@ -33,9 +33,14 @@ class DataGenerator:
         # 为每个信号生成不同的参数（频率、相位、幅度、周期）
         self.signal_params = []
         np.random.seed(42)  # 固定随机种子以保证可重复性
+        
+        # 固定的采样周期设置（针对4个信号）
+        # 基础周期设为 10ms (100Hz)，目标周期：20ms, 50ms, 100ms, 200ms
+        fixed_period_multipliers = [2, 5, 10, 20]  # 对应 20ms, 50ms, 100ms, 200ms
+        
         for i in range(self.num_signals):
-            # 每个信号有不同的采样周期（相对于基础周期的倍数）
-            period_multiplier = np.random.choice([1, 2, 3, 5])  # 1x, 2x, 3x, 5x 基础周期
+            # 使用固定的周期倍数（前4个信号使用固定值，多余的信号循环使用）
+            period_multiplier = fixed_period_multipliers[i % len(fixed_period_multipliers)]
             
             self.signal_params.append({
                 'frequency': 0.1 + np.random.uniform(0, 0.5),  # 随机频率 0.1-0.6 Hz
@@ -43,7 +48,7 @@ class DataGenerator:
                 'amplitude': 1.0 + np.random.uniform(0, 2.0),  # 随机幅度 1.0-3.0
                 'offset': i * 0.3,  # 不同偏移以便区分
                 'noise': np.random.uniform(0.05, 0.2),  # 随机噪声水平
-                'period_multiplier': period_multiplier,  # 采样周期倍数
+                'period_multiplier': period_multiplier,  # 采样周期倍数（固定）
                 'last_update_counter': 0  # 上次更新的计数器值
             })
         
@@ -57,7 +62,7 @@ class DataGenerator:
         
         Returns:
             DataFrame: 包含 timestamp 和本次更新的信号列的数据
-                     没有更新的信号将使用 NaN 或上一个值
+                     没有更新的信号值为 NaN（空值）
         """
         current_time = self.start_time + timedelta(seconds=self.counter * self.base_interval)
         
@@ -80,22 +85,21 @@ class DataGenerator:
                 )
                 row_data[signal_name] = value
                 params['last_update_counter'] = self.counter
+                params['last_value'] = value  # 保存最后一个有效值
             else:
-                # 使用上一个值（线性插值或保持不变）
-                if len(self.data[signal_name]) > 0:
-                    row_data[signal_name] = self.data[signal_name][-1]
-                else:
-                    row_data[signal_name] = params['offset']
+                # 当前时间点没有采样，值为 NaN（空）
+                row_data[signal_name] = np.nan
         
-        # 添加到内部存储
+        # 添加到内部存储（保持 NaN 值，不填充）
         self.data['timestamp'].append(current_time)
         for i in range(self.num_signals):
             signal_name = f'signal_{i+1}'
+            # 内部存储也保持 NaN 值，真实反映采样情况
             self.data[signal_name].append(row_data[signal_name])
         
         self.counter += 1
         
-        # 返回 DataFrame
+        # 返回 DataFrame（包含 NaN 值）
         return pd.DataFrame([row_data])
     
     def generate_batch_data(self, num_points: int) -> pd.DataFrame:
@@ -169,8 +173,12 @@ class DataGenerator:
         """
         info_list = []
         for i, params in enumerate(self.signal_params):
+            # 计算实际采样周期（毫秒）
+            sample_period_ms = (params['period_multiplier'] * self.base_interval) * 1000
+            
             info_list.append({
                 'signal': f'signal_{i+1}',
+                'sample_period_ms': sample_period_ms,  # 采样周期（毫秒）
                 'frequency': params['frequency'],
                 'amplitude': params['amplitude'],
                 'offset': params['offset'],

@@ -145,14 +145,22 @@ data = pd.DataFrame({
 
 ### 不同信号不同周期
 
-每个信号有独立的采样周期倍数，更贴近真实场景：
+4个信号的采样周期固定为 **20ms、50ms、100ms、200ms**：
 
 ```python
-# 基础采样率 5Hz 的情况下：
-Signal 1: 周期倍数 3x → 有效采样率 1.67 Hz
-Signal 2: 周期倍数 2x → 有效采样率 2.5 Hz
-Signal 3: 周期倍数 5x → 有效采样率 1.0 Hz
-Signal 4: 周期倍数 1x → 有效采样率 5.0 Hz
+# 基础采样率 100Hz (10ms基础周期)
+Signal 1: 采样周期 20ms  (周期倍数 2)  → 有效采样率 50 Hz
+Signal 2: 采样周期 50ms  (周期倍数 5)  → 有效采样率 20 Hz
+Signal 3: 采样周期 100ms (周期倍数 10) → 有效采样率 10 Hz
+Signal 4: 采样周期 200ms (周期倍数 20) → 有效采样率 5 Hz
+```
+
+**重要**：非采样时间点的值为 `NaN`（空值），在图表上显示为断点，不进行填充。这样能准确反映真实的采样情况。
+
+```python
+# 示例：查看数据中的 NaN 值
+data = generator.generate_batch_data(100)
+print(data['signal_1'].isna().sum())  # 输出空值数量
 ```
 
 查看信号参数信息：
@@ -164,11 +172,11 @@ print(info)
 
 输出示例：
 ```
-  signal  frequency  amplitude  offset  period_multiplier  effective_sample_rate
-signal_1   0.498271   2.559382     0.0                  3               1.666667
-signal_2   0.177997   2.732352     0.3                  2               2.500000
-signal_3   0.425444   2.443998     0.6                  5               1.000000
-signal_4   0.190912   1.608484     0.9                  2               2.500000
+  signal  sample_period_ms  frequency  amplitude  offset  effective_sample_rate
+signal_1              20.0   0.287270   2.463988     0.0                   50.0
+signal_2              50.0   0.178009   1.116167     0.3                   20.0
+signal_3             100.0   0.400558   1.041169     0.6                   10.0
+signal_4             200.0   0.516221   1.363650     0.9                    5.0
 ```
 
 ### 自动时间窗口管理
