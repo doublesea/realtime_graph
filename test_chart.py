@@ -28,15 +28,16 @@ def create_test_data():
     return pd.DataFrame(data)
 
 class EChartWidget:
-    def __init__(self, df: pd.DataFrame, signal_types: dict):
+    def __init__(self, df: pd.DataFrame, signal_types: dict, window_seconds: float = 60.0):
         self.signal_types = signal_types
         self.signal_names = list(signal_types.keys())
         self.num_signals = len(signal_types)
+        self.window_seconds = window_seconds
         self.last_timestamp = df['timestamp'].max()
         
         self.realtime_plot = RealtimePlot(
             num_signals=self.num_signals, 
-            window_seconds=60.0, 
+            window_seconds=self.window_seconds, 
             signal_types=signal_types)
         self.realtime_plot.update_data(df)
         self.option = self.realtime_plot.get_option()
@@ -45,14 +46,90 @@ class EChartWidget:
         self.chart_widget.update_enum_labels(signal_types)
     
     def get_option(self):
-        return self.option
+        """获取当前图表配置"""
+        return self.realtime_plot.get_option()
     
     def append_data(self, df: pd.DataFrame):
-        """添加新数据到图表"""
+        """添加新数据到图表（增量添加）"""
         self.realtime_plot.append_data(df)
-        self.last_timestamp = df['timestamp'].max()
+        if not df.empty and 'timestamp' in df.columns:
+            self.last_timestamp = df['timestamp'].max()
         
         # 更新图表显示
+        self._update_chart_display()
+    
+    def update_data(self, df: pd.DataFrame):
+        """
+        更新数据（完全替换）
+        
+        Args:
+            df: 新的 DataFrame 数据，必须包含 'timestamp' 列和所有信号列
+        """
+        self.realtime_plot.update_data(df)
+        if not df.empty and 'timestamp' in df.columns:
+            self.last_timestamp = df['timestamp'].max()
+        
+        # 更新图表显示
+        self._update_chart_display()
+    
+    def clear_data(self):
+        """清空所有数据"""
+        self.realtime_plot.clear_data()
+        self.last_timestamp = datetime.now()
+        
+        # 更新图表显示（清空）
+        self._update_chart_display()
+    
+    def update_config(self, window_seconds: float = None, signal_types: dict = None):
+        """
+        更新配置并重新初始化图表
+        
+        Args:
+            window_seconds: 新的时间窗口大小（秒），None 表示不更改
+            signal_types: 新的信号类型配置，None 表示不更改
+        """
+        # 保存当前数据
+        current_data = self.realtime_plot.get_buffered_data()
+        
+        # 更新配置
+        if window_seconds is not None:
+            self.window_seconds = window_seconds
+        
+        if signal_types is not None:
+            self.signal_types = signal_types
+            self.signal_names = list(signal_types.keys())
+            self.num_signals = len(signal_types)
+        
+        # 重新初始化 RealtimePlot
+        self.realtime_plot = RealtimePlot(
+            num_signals=self.num_signals,
+            window_seconds=self.window_seconds,
+            signal_types=self.signal_types
+        )
+        
+        # 恢复数据
+        if current_data is not None and not current_data.empty:
+            self.realtime_plot.update_data(current_data)
+        
+        # 更新图表配置
+        new_option = self.realtime_plot.get_option()
+        self.chart_widget.update_chart_option(new_option, exclude_tooltip=True)
+        self.chart_widget.update_enum_labels(self.signal_types)
+        
+        # 更新图表显示
+        self._update_chart_display()
+    
+    def get_buffered_data(self):
+        """
+        获取当前缓存的数据
+        
+        Returns:
+            DataFrame 或 None
+        """
+        return self.realtime_plot.get_buffered_data()
+    
+    def _update_chart_display(self):
+        """内部方法：更新图表显示"""
         new_option = self.realtime_plot.get_option()
         series_data = [
             {
@@ -65,7 +142,15 @@ class EChartWidget:
         self.chart_widget.update_series_data(series_data)
     
     def generate_new_batch(self, num_points=10):
-        """生成一批新数据"""
+        """
+        生成一批新数据（用于测试）
+        
+        Args:
+            num_points: 生成的数据点数量
+            
+        Returns:
+            DataFrame: 新生成的数据
+        """
         # 从上次的时间戳继续
         timestamps = [self.last_timestamp + timedelta(milliseconds=i*100) for i in range(1, num_points+1)]
         
@@ -138,6 +223,13 @@ def test_page():
             stop_btn.disable()
             status_label = ui.label('状态: 准备就绪')
             counter_label = ui.label('添加次数: 0/10').style('font-weight: bold; color: #1976d2;')
+        
+        # 新增接口测试按钮
+        with ui.row().classes('gap-2 mt-2 items-center'):
+            ui.label('接口测试:').style('font-weight: bold;')
+            clear_btn = ui.button('清空数据', icon='delete').props('color=orange outline')
+            reset_btn = ui.button('重置初始数据', icon='refresh').props('color=blue outline')
+            config_btn = ui.button('修改窗口(120秒)', icon='settings').props('color=purple outline')
     
     # 创建图表
     with ui.card().classes('w-full').style('overflow-y: scroll; max-height: 75vh; padding: 10px;'):
@@ -198,19 +290,64 @@ def test_page():
         stop_btn.disable()
         status_label.text = f'状态: 已停止（已添加{counter[0]}批数据）'
     
+    def clear_data():
+        """清空数据"""
+        echart_widget.clear_data()
+        data_points_label.text = '数据点数：0'
+        time_span_label.text = '时间跨度：0.0 秒'
+        status_label.text = '状态: 数据已清空'
+        counter[0] = 0
+        counter_label.text = '添加次数: 0/10'
+        ui.notify('数据已清空', type='info')
+    
+    def reset_data():
+        """重置到初始数据"""
+        initial_df = create_test_data()
+        echart_widget.update_data(initial_df)
+        data_points_label.text = f'数据点数：{len(initial_df)}'
+        time_span = (initial_df['timestamp'].max() - initial_df['timestamp'].min()).total_seconds()
+        time_span_label.text = f'时间跨度：{time_span:.1f} 秒'
+        status_label.text = '状态: 已重置到初始数据'
+        counter[0] = 0
+        counter_label.text = '添加次数: 0/10'
+        ui.notify('已重置到初始数据（600点）', type='positive')
+    
+    def update_config():
+        """修改窗口配置"""
+        echart_widget.update_config(window_seconds=120.0)
+        status_label.text = '状态: 已修改窗口为120秒'
+        ui.notify('时间窗口已修改为 120 秒', type='positive')
+        # 更新统计信息
+        buffered_data = echart_widget.get_buffered_data()
+        if buffered_data is not None and not buffered_data.empty:
+            data_points_label.text = f'数据点数：{len(buffered_data)}'
+            time_span = (buffered_data['timestamp'].max() - buffered_data['timestamp'].min()).total_seconds()
+            time_span_label.text = f'时间跨度：{time_span:.1f} 秒'
+    
     # 绑定按钮事件
     start_btn.on_click(start_adding)
     stop_btn.on_click(stop_adding)
+    clear_btn.on_click(clear_data)
+    reset_btn.on_click(reset_data)
+    config_btn.on_click(update_config)
     
     # 使用提示
     with ui.card().classes('w-full p-2').style('background-color: #fff3e0;'):
         ui.html('''
         <div style="font-size: 12px; color: #e65100;">
-            <b>💡 交互提示：</b>
-            <span style="margin-left:10px;">• 点击"开始添加数据"按钮启动自动添加</span>
-            <span style="margin-left:10px;">• 拖动底部滑块缩放时间轴</span>
-            <span style="margin-left:10px;">• 使用 Ctrl+滚轮 缩放</span>
-            <span style="margin-left:10px;">• 鼠标悬停查看数据点详情</span>
+            <b>💡 功能说明：</b><br>
+            <div style="margin-top: 5px;">
+                <b>数据操作：</b>
+                <span style="margin-left:10px;">• <b>开始添加数据</b>: 每秒自动添加10个数据点，共10次</span><br>
+                <span style="margin-left:10px;">• <b>清空数据</b>: 清空图表中的所有数据</span><br>
+                <span style="margin-left:10px;">• <b>重置初始数据</b>: 恢复到初始的600个数据点</span><br>
+                <span style="margin-left:10px;">• <b>修改窗口</b>: 将时间窗口从60秒修改为120秒</span><br>
+            </div>
+            <div style="margin-top: 5px;">
+                <b>图表交互：</b>
+                <span style="margin-left:10px;">• 拖动底部滑块或使用 Ctrl+滚轮 缩放时间轴</span><br>
+                <span style="margin-left:10px;">• 鼠标悬停查看数据点详情</span>
+            </div>
         </div>
         ''', sanitize=False)
 
