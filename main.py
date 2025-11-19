@@ -104,10 +104,13 @@ def create_ui():
         # 初始化数据生成器
         data_generator = DataGenerator(num_signals=num_signals, base_sample_rate=sample_rate)
         
-        # 构建信号类型配置
+        # 构建信号类型配置（使用包含 [] 和 _ 的信号名）
         signal_types = {}
+        signal_name_patterns = ['a_[{}]', 'b_c_d[{}]', 'sig_x_[{}]', 'data_y[{}]', 'ch_{}[0]', 'sensor_[{}]', 'val_{}[a]', 'input_x[{}]']
         for i, params in enumerate(data_generator.signal_params):
-            signal_name = f'signal_{i+1}'
+            # 使用不同的信号名模式
+            pattern = signal_name_patterns[i % len(signal_name_patterns)]
+            signal_name = pattern.format(i)
             if params['type'] == 'enum':
                 signal_types[signal_name] = {
                     'type': 'enum',
@@ -121,12 +124,17 @@ def create_ui():
         
         # 更新信号信息显示
         signal_info = data_generator.get_signal_info()
+        # 使用自定义信号名替换默认的 signal_X
+        signal_names_list = list(signal_types.keys())
         info_html = '<table style="width:100%; font-size:10px; border-collapse: collapse;">'
         info_html += '<tr style="background-color:#f0f0f0; font-weight:bold;"><th>信号</th><th>类型</th><th>周期(ms)</th><th>采样率(Hz)</th><th>频率</th><th>幅度</th><th>偏移</th><th>枚举值</th></tr>'
-        for _, row in signal_info.iterrows():
+        for idx, row in signal_info.iterrows():
             # 根据类型设置背景色
             bg_color = '#fff8e1' if row['type'] == 'enum' else '#ffffff'
             type_label = '<span style="color:#ff6f00;">枚举</span>' if row['type'] == 'enum' else '数值'
+            
+            # 使用自定义信号名
+            custom_signal_name = signal_names_list[idx] if idx < len(signal_names_list) else row["signal"]
             
             # 格式化显示
             freq_str = '-' if row['frequency'] == '-' else f"{row['frequency']:.2f}"
@@ -134,7 +142,7 @@ def create_ui():
             offset_str = '-' if row['offset'] == '-' else f"{row['offset']:.2f}"
             enum_str = '-' if row['enum_values'] == '-' else f'<div style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{row["enum_values"]}">{row["enum_values"]}</div>'
             
-            info_html += f'<tr style="border-bottom:1px solid #ddd; background-color:{bg_color};"><td><b>{row["signal"]}</b></td><td>{type_label}</td><td>{row["sample_period_ms"]:.0f}</td><td>{row["effective_sample_rate"]:.1f}</td><td>{freq_str}</td><td>{amp_str}</td><td>{offset_str}</td><td>{enum_str}</td></tr>'
+            info_html += f'<tr style="border-bottom:1px solid #ddd; background-color:{bg_color};"><td><b>{custom_signal_name}</b></td><td>{type_label}</td><td>{row["sample_period_ms"]:.0f}</td><td>{row["effective_sample_rate"]:.1f}</td><td>{freq_str}</td><td>{amp_str}</td><td>{offset_str}</td><td>{enum_str}</td></tr>'
         info_html += '</table>'
         info_card.content = info_html
         
@@ -160,10 +168,19 @@ def create_ui():
         stop_btn.enable()
         status_label.text = '状态: 运行中'
         
+        # 创建列名映射（从默认的 signal_{i+1} 到自定义信号名）
+        signal_names_list = list(realtime_plot.signal_types.keys())
+        column_rename_map = {f'signal_{i+1}': signal_names_list[i] for i in range(len(signal_names_list))}
+        
+        def rename_columns(df):
+            """重命名 DataFrame 的列名"""
+            return df.rename(columns=column_rename_map)
+        
         # 生成初始数据（生成几个数据点以便图表有内容显示）
         sample_rate = float(sample_rate_input.value) if sample_rate_input.value is not None else 100.0
         initial_points = int(sample_rate * 0.5)  # 0.5秒的数据点
         initial_batch = data_generator.generate_batch_data(initial_points)
+        initial_batch = rename_columns(initial_batch)  # 重命名列
         realtime_plot.append_data(initial_batch)
         
         # 更新图表显示初始数据
@@ -195,6 +212,7 @@ def create_ui():
             
             # 批量生成0.5秒的数据
             batch_data = data_generator.generate_batch_data(num_points)
+            batch_data = rename_columns(batch_data)  # 重命名列
             
             # 将新数据传给绘图控件（内部缓存管理，自动裁剪到时间窗口）
             realtime_plot.append_data(batch_data)

@@ -95,7 +95,8 @@ class RealtimeChartWidget:
                 const p = params[i];
                 const v = p.value ? p.value[1] : null;
                 if (v != null) {{
-                    const signalIndex = parseInt(p.seriesName.replace('Signal ', ''));
+                    // 使用 seriesIndex（从0开始），但显示时需要+1来匹配枚举标签映射
+                    const signalIndex = p.seriesIndex + 1;
                     
                     if (signalsMap.has(signalIndex)) continue;
                     
@@ -110,7 +111,7 @@ class RealtimeChartWidget:
                     }}
                     
                     signalsMap.set(signalIndex, {{
-                        name: p.seriesName,
+                        name: p.seriesName,  // 现在这将是自定义信号名
                         value: v,
                         displayValue: displayValue,
                         color: p.color,
@@ -337,16 +338,16 @@ class RealtimeChartWidget:
         更新枚举标签映射
         
         Args:
-            signal_types: 信号类型配置，格式如 {'signal_1': {'type': 'enum', 'enum_labels': {...}}}
+            signal_types: 信号类型配置，格式如 {'signal_name': {'type': 'enum', 'enum_labels': {...}}}
         """
         enum_labels_json = {}
-        for signal_name, config in signal_types.items():
+        # 使用 enumerate 按顺序为信号分配索引（从1开始），而不是从信号名中解析数字
+        for signal_index, (signal_name, config) in enumerate(signal_types.items(), start=1):
             if config['type'] == 'enum':
-                # signal_name 是 'signal_X'，X 是显示编号（从1开始）
-                # 直接使用这个编号作为键，与 tooltip 中的 Signal X 匹配
-                signal_display_number = int(signal_name.split('_')[1])
+                # signal_index 是显示编号（从1开始）
+                # 使用这个编号作为键，与 tooltip 中的 Signal X 匹配
                 # 将整数键转换为字符串键以便 JSON 序列化
-                enum_labels_json[str(signal_display_number)] = {str(k): v for k, v in config['enum_labels'].items()}
+                enum_labels_json[str(signal_index)] = {str(k): v for k, v in config['enum_labels'].items()}
         
         # 更新枚举标签映射到全局变量
         enum_labels_js = json.dumps(enum_labels_json)

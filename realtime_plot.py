@@ -58,9 +58,13 @@ class RealtimePlot:
         # 计算所需的最大左边距（为枚举标签预留足够空间）
         # 检查是否有枚举信号，并找出最长的标签
         max_label_length = 0
+        # 将 signal_types 转换为列表以按索引访问
+        signal_types_list = list(self.signal_types.items())
         for i in range(self.num_signals):
-            signal_name = f'signal_{i+1}'
-            signal_config = self.signal_types.get(signal_name, {'type': 'numeric'})
+            if i < len(signal_types_list):
+                signal_name, signal_config = signal_types_list[i]
+            else:
+                signal_config = {'type': 'numeric'}
             if signal_config['type'] == 'enum':
                 enum_labels = signal_config.get('enum_labels', {})
                 for label in enum_labels.values():
@@ -78,9 +82,15 @@ class RealtimePlot:
             title_offset = 22 if chart_height_per_signal >= 100 else 18
             grid_height = chart_height_per_signal - 25 if chart_height_per_signal >= 100 else chart_height_per_signal - 20
             
+            # 获取自定义信号名（如果有的话）
+            if i < len(signal_types_list):
+                display_name = signal_types_list[i][0]  # 使用自定义信号名
+            else:
+                display_name = f'Signal {i+1}'  # 默认名称
+            
             # 配置标题（显示在每个子图的左上角）
             titles.append({
-                'text': f'Signal {i+1}',
+                'text': display_name,
                 'left': title_left,  # 与 grid 的 left 对齐
                 'top': top - title_offset,  # 在 grid 上方
                 'textStyle': {
@@ -127,8 +137,11 @@ class RealtimePlot:
             })
             
             # 配置 y 轴（不再显示 name，因为已经在左上角有标题了）
-            signal_name = f'signal_{i+1}'
-            signal_config = self.signal_types.get(signal_name, {'type': 'numeric'})
+            # 使用列表索引获取信号配置
+            if i < len(signal_types_list):
+                signal_name, signal_config = signal_types_list[i]
+            else:
+                signal_config = {'type': 'numeric'}
             
             if signal_config['type'] == 'enum':
                 # 枚举信号的 y 轴：使用类别轴直接显示文本
@@ -166,6 +179,9 @@ class RealtimePlot:
                     'splitNumber': 3  # 减少刻度线数量，节省空间
                 })
             
+            # 获取显示名称（已在上面定义）
+            series_name = display_name if i < len(signal_types_list) else f'Signal {i+1}'
+            
             # 配置系列（折线图或阶梯图）
             if signal_config['type'] == 'enum':
                 # 枚举信号：使用阶梯图
@@ -174,7 +190,7 @@ class RealtimePlot:
                     'xAxisIndex': i,
                     'yAxisIndex': i,
                     'data': [],
-                    'name': f'Signal {i+1}',
+                    'name': series_name,
                     'step': 'end',  # 阶梯图样式
                     'smooth': False,
                     'symbol': 'circle',  # 实心圆形数据点
@@ -191,7 +207,7 @@ class RealtimePlot:
                     'xAxisIndex': i,
                     'yAxisIndex': i,
                     'data': [],
-                    'name': f'Signal {i+1}',
+                    'name': series_name,
                     'smooth': False,
                     'symbol': 'emptyCircle',  # 显示空心圆形数据点
                     'symbolSize': 6,  # 数据点大小
@@ -309,7 +325,7 @@ class RealtimePlot:
         将 DataFrame 数据更新到图表配置中，并根据数据点密度自动调整显示方式
         
         Args:
-            df: DataFrame，包含 timestamp 列和所有 signal_* 列
+            df: DataFrame，包含 timestamp 列和所有信号列
         """
         if df.empty:
             return
@@ -319,9 +335,18 @@ class RealtimePlot:
             lambda x: int(x.timestamp() * 1000) if isinstance(x, datetime) else x
         ).tolist()
         
+        # 将 signal_types 转换为列表以按索引访问
+        signal_types_list = list(self.signal_types.items())
+        
         # 更新每个信号的数据
         for i in range(self.num_signals):
-            signal_name = f'signal_{i+1}'
+            # 使用列表索引获取信号名
+            if i < len(signal_types_list):
+                signal_name, _ = signal_types_list[i]
+            else:
+                # 如果没有配置，尝试使用默认的 signal_* 列名
+                signal_name = f'signal_{i+1}'
+            
             if signal_name in df.columns:
                 # ECharts 时间序列数据格式：[[timestamp, value], ...]
                 # 关键改进：只传递有效数据点，跳过 NaN 值
