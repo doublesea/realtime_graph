@@ -254,7 +254,7 @@ class RealtimePlot:
                     'fontSize': 12
                 },
                 'padding': [10, 12],
-                'extraCssText': 'box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); max-height: 90vh; max-width: 800px; overflow-y: auto;',
+                'extraCssText': 'box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); max-height: 90vh; max-width: 600px; min-width: 280px; overflow-y: auto;',
                 'confine': False  # 允许tooltip超出图表边界，避免被截断
             },
             'dataZoom': [

@@ -22,7 +22,8 @@ def create_test_data():
         'a_[0]': np.sin(np.linspace(0, 4*np.pi, 600)) * 2 + 1,  # 正弦波
         'b_c_d[1]': np.cos(np.linspace(0, 3*np.pi, 600)) * 1.5 + 2,  # 余弦波
         'sig_x_[2]': np.random.randn(600).cumsum() * 0.1 + 3,  # 随机游走
-        'data_y[3]': np.array([0, 1, 2, 3, 0, 1, 2, 3] * 75)  # 枚举信号
+        'data_y[3]': np.array([0, 1, 2, 3, 0, 1, 2, 3] * 75),  # 枚举信号
+        'sig_x_[4]': np.random.randn(600).cumsum() * 0.1 + 3,  # 随机游走
     }
     
     return pd.DataFrame(data)
@@ -175,21 +176,6 @@ def test_page():
     with ui.header(elevated=True).style('background-color: #1976d2;'):
         ui.label('RealtimeChartWidget 测试').style('color: white; font-size: 20px; font-weight: bold;')
     
-    # 说明
-    with ui.card().classes('w-full p-4').style('background-color: #e3f2fd;'):
-        ui.label('📊 测试说明').classes('text-h6 mb-2')
-        ui.html('''
-        <div style="font-size: 14px;">
-            <p>这是一个简单的测试，展示如何使用静态数据绘制图表：</p>
-            <ul>
-                <li>4个测试信号：a_[0], b_c_d[1], sig_x_[2], data_y[3]</li>
-                <li>3个数值信号 + 1个枚举信号</li>
-                <li>初始时间跨度：60秒，共600个数据点</li>
-                <li>点击"开始添加数据"按钮，每秒添加10个新数据点，共添加10次</li>
-            </ul>
-        </div>
-        ''', sanitize=False)
-    
     # 创建测试数据
     df = create_test_data()
     
@@ -209,31 +195,105 @@ def test_page():
         }
     }
     
-    # 显示数据统计
-    with ui.card().classes('w-full p-4'):
-        ui.label('📈 数据统计与控制').classes('text-h6 mb-2')
-        with ui.row().classes('gap-4 items-center'):
-            data_points_label = ui.label(f'数据点数：{len(df)}')
-            ui.label(f'信号数量：{len(signal_types)}')
-            time_span_label = ui.label(f'时间跨度：{(df["timestamp"].max() - df["timestamp"].min()).total_seconds():.1f} 秒')
-        
-        with ui.row().classes('gap-2 mt-4 items-center'):
-            start_btn = ui.button('开始添加数据', icon='play_arrow').props('color=green')
-            stop_btn = ui.button('停止', icon='stop').props('color=red')
-            stop_btn.disable()
-            status_label = ui.label('状态: 准备就绪')
-            counter_label = ui.label('添加次数: 0/10').style('font-weight: bold; color: #1976d2;')
-        
-        # 新增接口测试按钮
-        with ui.row().classes('gap-2 mt-2 items-center'):
-            ui.label('接口测试:').style('font-weight: bold;')
-            clear_btn = ui.button('清空数据', icon='delete').props('color=orange outline')
-            reset_btn = ui.button('重置初始数据', icon='refresh').props('color=blue outline')
-            config_btn = ui.button('修改窗口(120秒)', icon='settings').props('color=purple outline')
+    # 创建 Tabs
+    with ui.tabs().classes('w-full') as tabs:
+        tab2 = ui.tab('说明文档', icon='description')
+        tab1 = ui.tab('图表显示', icon='show_chart')
     
-    # 创建图表
-    with ui.card().classes('w-full').style('overflow-y: scroll; max-height: 75vh; padding: 10px;'):
-        echart_widget = EChartWidget(df, signal_types)
+    with ui.tab_panels(tabs, value=tab1).classes('w-full'):
+        # Tab 1: 图表显示和控制
+        with ui.tab_panel(tab1):
+            # 显示数据统计
+            # with ui.card().classes('w-full p-4'):
+            #     ui.label('📈 数据统计与控制').classes('text-h6 mb-2')
+            #     with ui.row().classes('gap-4 items-center'):
+            #         data_points_label = ui.label(f'数据点数：{len(df)}')
+            #         ui.label(f'信号数量：{len(signal_types)}')
+            #         time_span_label = ui.label(f'时间跨度：{(df["timestamp"].max() - df["timestamp"].min()).total_seconds():.1f} 秒')
+                
+            #     with ui.row().classes('gap-2 mt-4 items-center'):
+            #         start_btn = ui.button('开始添加数据', icon='play_arrow').props('color=green')
+            #         stop_btn = ui.button('停止', icon='stop').props('color=red')
+            #         stop_btn.disable()
+            #         status_label = ui.label('状态: 准备就绪')
+            #         counter_label = ui.label('添加次数: 0/10').style('font-weight: bold; color: #1976d2;')
+                
+            #     # 新增接口测试按钮
+            #     with ui.row().classes('gap-2 mt-2 items-center'):
+            #         ui.label('接口测试:').style('font-weight: bold;')
+            #         clear_btn = ui.button('清空数据', icon='delete').props('color=orange outline')
+            #         reset_btn = ui.button('重置初始数据', icon='refresh').props('color=blue outline')
+            #         config_btn = ui.button('修改窗口(120秒)', icon='settings').props('color=purple outline')
+            
+            # 创建图表
+            # with ui.card().classes('w-full').style('overflow-y: scroll; max-height: 65vh; padding: 10px;'):
+            echart_widget = EChartWidget(df, signal_types)
+            
+            # 使用提示
+            # with ui.card().classes('w-full p-2').style('background-color: #fff3e0;'):
+            #     ui.html('''
+            #     <div style="font-size: 12px; color: #e65100;">
+            #         <b>💡 功能说明：</b><br>
+            #         <div style="margin-top: 5px;">
+            #             <b>数据操作：</b>
+            #             <span style="margin-left:10px;">• <b>开始添加数据</b>: 每秒自动添加10个数据点，共10次</span><br>
+            #             <span style="margin-left:10px;">• <b>清空数据</b>: 清空图表中的所有数据</span><br>
+            #             <span style="margin-left:10px;">• <b>重置初始数据</b>: 恢复到初始的600个数据点</span><br>
+            #             <span style="margin-left:10px;">• <b>修改窗口</b>: 将时间窗口从60秒修改为120秒</span><br>
+            #         </div>
+            #         <div style="margin-top: 5px;">
+            #             <b>图表交互：</b>
+            #             <span style="margin-left:10px;">• 拖动底部滑块或使用 Ctrl+滚轮 缩放时间轴</span><br>
+            #             <span style="margin-left:10px;">• 鼠标悬停查看数据点详情</span>
+            #         </div>
+            #     </div>
+            #     ''', sanitize=False)
+        
+        # Tab 2: 说明文档
+        with ui.tab_panel(tab2):
+            with ui.card().classes('w-full p-4').style('background-color: #e3f2fd;'):
+                ui.label('📊 测试说明').classes('text-h6 mb-2')
+                ui.html('''
+                <div style="font-size: 14px;">
+                    <p>这是一个简单的测试，展示如何使用静态数据绘制图表：</p>
+                    <ul>
+                        <li>4个测试信号：a_[0], b_c_d[1], sig_x_[2], data_y[3]</li>
+                        <li>3个数值信号 + 1个枚举信号</li>
+                        <li>初始时间跨度：60秒，共600个数据点</li>
+                        <li>点击"开始添加数据"按钮，每秒添加10个新数据点，共添加10次</li>
+                    </ul>
+                </div>
+                ''', # sanitize=False
+                )
+            
+            with ui.card().classes('w-full p-4 mt-4'):
+                ui.label('📖 组件功能介绍').classes('text-h6 mb-2')
+                ui.html('''
+                <div style="font-size: 14px; line-height: 1.8;">
+                    <h3 style="color: #1976d2;">RealtimeChartWidget</h3>
+                    <p>实时图表控件，支持动态数据更新和多种信号类型显示。</p>
+                    
+                    <h4 style="margin-top: 15px; color: #1976d2;">主要功能：</h4>
+                    <ul>
+                        <li><b>数值信号显示：</b>支持连续数值数据的实时绘制</li>
+                        <li><b>枚举信号显示：</b>支持状态类型数据的阶梯图显示</li>
+                        <li><b>时间窗口：</b>可配置的滚动时间窗口</li>
+                        <li><b>数据缓冲：</b>智能的数据缓存和管理机制</li>
+                        <li><b>交互式缩放：</b>支持时间轴的拖拽和缩放</li>
+                    </ul>
+                    
+                    <h4 style="margin-top: 15px; color: #1976d2;">API接口：</h4>
+                    <ul>
+                        <li><code>append_data(df)</code> - 增量添加新数据</li>
+                        <li><code>update_data(df)</code> - 完全替换数据</li>
+                        <li><code>clear_data()</code> - 清空所有数据</li>
+                        <li><code>update_config()</code> - 更新配置参数</li>
+                        <li><code>get_buffered_data()</code> - 获取当前缓存数据</li>
+                    </ul>
+                </div>
+                ''', 
+                # sanitize=False
+                )
     
     # 定时器和计数器变量
     timer = None
@@ -325,31 +385,11 @@ def test_page():
             time_span_label.text = f'时间跨度：{time_span:.1f} 秒'
     
     # 绑定按钮事件
-    start_btn.on_click(start_adding)
-    stop_btn.on_click(stop_adding)
-    clear_btn.on_click(clear_data)
-    reset_btn.on_click(reset_data)
-    config_btn.on_click(update_config)
-    
-    # 使用提示
-    with ui.card().classes('w-full p-2').style('background-color: #fff3e0;'):
-        ui.html('''
-        <div style="font-size: 12px; color: #e65100;">
-            <b>💡 功能说明：</b><br>
-            <div style="margin-top: 5px;">
-                <b>数据操作：</b>
-                <span style="margin-left:10px;">• <b>开始添加数据</b>: 每秒自动添加10个数据点，共10次</span><br>
-                <span style="margin-left:10px;">• <b>清空数据</b>: 清空图表中的所有数据</span><br>
-                <span style="margin-left:10px;">• <b>重置初始数据</b>: 恢复到初始的600个数据点</span><br>
-                <span style="margin-left:10px;">• <b>修改窗口</b>: 将时间窗口从60秒修改为120秒</span><br>
-            </div>
-            <div style="margin-top: 5px;">
-                <b>图表交互：</b>
-                <span style="margin-left:10px;">• 拖动底部滑块或使用 Ctrl+滚轮 缩放时间轴</span><br>
-                <span style="margin-left:10px;">• 鼠标悬停查看数据点详情</span>
-            </div>
-        </div>
-        ''', sanitize=False)
+    # start_btn.on_click(start_adding)
+    # stop_btn.on_click(stop_adding)
+    # clear_btn.on_click(clear_data)
+    # reset_btn.on_click(reset_data)
+    # config_btn.on_click(update_config)
 
 
 # 启动应用
