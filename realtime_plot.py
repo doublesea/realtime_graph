@@ -121,7 +121,7 @@ class RealtimePlot:
                 'axisTick': {'show': is_last},
                 'axisLabel': {
                     'show': is_last,
-                    'formatter': '{HH}:{mm}:{ss}.{SSS}',  # 显示时分秒和毫秒
+                    'formatter': '{HH}:{mm}:{ss}.{SSS}',  # 占位符，将在JavaScript中被替换
                     'fontSize': 10,
                     'rotate': 0
                 },
@@ -331,9 +331,16 @@ class RealtimePlot:
             return
         
         # 将时间戳转换为 ECharts 时间格式（毫秒时间戳）
-        timestamps = df['timestamp'].apply(
-            lambda x: int(x.timestamp() * 1000) if isinstance(x, datetime) else x
-        ).tolist()
+        # 不使用时区转换，直接将datetime视为UTC时间
+        def datetime_to_ms(x):
+            if isinstance(x, datetime):
+                # 将datetime视为naive UTC时间，不考虑本地时区
+                epoch = datetime(1970, 1, 1)
+                return int((x - epoch).total_seconds() * 1000)
+            else:
+                return x
+        
+        timestamps = df['timestamp'].apply(datetime_to_ms).tolist()
         
         # 将 signal_types 转换为列表以按索引访问
         signal_types_list = list(self.signal_types.items())

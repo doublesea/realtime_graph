@@ -98,14 +98,15 @@ class RealtimeChartWidget:
                     if (!timestamp) return '';
                     
                     // 格式化时间（日期+时间+毫秒）
+                    // 使用UTC方法，直接显示数据中的时间值，不做时区转换
                     const date = new Date(timestamp);
-                    const year = date.getFullYear();
-                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const day = String(date.getDate()).padStart(2, '0');
-                    const h = String(date.getHours()).padStart(2, '0');
-                    const m = String(date.getMinutes()).padStart(2, '0');
-                    const s = String(date.getSeconds()).padStart(2, '0');
-                    const ms = String(date.getMilliseconds()).padStart(3, '0');
+                    const year = date.getUTCFullYear();
+                    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+                    const day = String(date.getUTCDate()).padStart(2, '0');
+                    const h = String(date.getUTCHours()).padStart(2, '0');
+                    const m = String(date.getUTCMinutes()).padStart(2, '0');
+                    const s = String(date.getUTCSeconds()).padStart(2, '0');
+                    const ms = String(date.getUTCMilliseconds()).padStart(3, '0');
                     const time = year + '-' + month + '-' + day + ' ' + h + ':' + m + ':' + s + '.' + ms;
                     
                     let html = '<div style="font-weight:bold;margin-bottom:8px;border-bottom:1px solid #666;padding-bottom:5px;">' + time + '</div>';
@@ -217,7 +218,28 @@ class RealtimeChartWidget:
                 
                 if (el && el.chart) {{
                     // 设置tooltip formatter和axisPointer（确保所有x轴联动）
+                    // 同时设置x轴时间标签的formatter，避免时区转换
+                    const option = el.chart.getOption();
+                    const xAxisConfig = [];
+                    if (option.xAxis) {{
+                        for (let i = 0; i < option.xAxis.length; i++) {{
+                            xAxisConfig.push({{
+                                axisLabel: {{
+                                    formatter: function(value) {{
+                                        const date = new Date(value);
+                                        const h = String(date.getUTCHours()).padStart(2, '0');
+                                        const m = String(date.getUTCMinutes()).padStart(2, '0');
+                                        const s = String(date.getUTCSeconds()).padStart(2, '0');
+                                        const ms = String(date.getUTCMilliseconds()).padStart(3, '0');
+                                        return h + ':' + m + ':' + s + '.' + ms;
+                                    }}
+                                }}
+                            }});
+                        }}
+                    }}
+                    
                     el.chart.setOption({{
+                        xAxis: xAxisConfig,
                         axisPointer: {{
                             link: [{{xAxisIndex: 'all'}}],  // 关键：链接所有x轴，确保tooltip只触发一次
                             label: {{
@@ -315,9 +337,29 @@ class RealtimeChartWidget:
                         chartDom.addEventListener('mouseleave', mouseLeaveHandler);
                     }}
                     
-                    // 监听图表更新事件，确保formatter和axisPointer不被覆盖
+                    // 监听图表更新事件，确保formatter、axisPointer和x轴formatter不被覆盖
                     el.chart.on('finished', function() {{
+                        const opt = el.chart.getOption();
+                        const xAxisCfg = [];
+                        if (opt.xAxis) {{
+                            for (let i = 0; i < opt.xAxis.length; i++) {{
+                                xAxisCfg.push({{
+                                    axisLabel: {{
+                                        formatter: function(value) {{
+                                            const date = new Date(value);
+                                            const h = String(date.getUTCHours()).padStart(2, '0');
+                                            const m = String(date.getUTCMinutes()).padStart(2, '0');
+                                            const s = String(date.getUTCSeconds()).padStart(2, '0');
+                                            const ms = String(date.getUTCMilliseconds()).padStart(3, '0');
+                                            return h + ':' + m + ':' + s + '.' + ms;
+                                        }}
+                                    }}
+                                }});
+                            }}
+                        }}
+                        
                         el.chart.setOption({{
+                            xAxis: xAxisCfg,
                             axisPointer: {{
                                 link: [{{xAxisIndex: 'all'}}]
                             }},
@@ -424,8 +466,27 @@ class RealtimeChartWidget:
                     const option = el.chart.getOption();
                     console.log('After update, chart has', option.series ? option.series.length : 0, 'series');
                     
-                    // 第二步：恢复tooltip和axisPointer配置
+                    // 第二步：恢复tooltip、axisPointer和x轴formatter配置
+                    const xAxisConfig = [];
+                    if (option.xAxis) {{
+                        for (let i = 0; i < option.xAxis.length; i++) {{
+                            xAxisConfig.push({{
+                                axisLabel: {{
+                                    formatter: function(value) {{
+                                        const date = new Date(value);
+                                        const h = String(date.getUTCHours()).padStart(2, '0');
+                                        const m = String(date.getUTCMinutes()).padStart(2, '0');
+                                        const s = String(date.getUTCSeconds()).padStart(2, '0');
+                                        const ms = String(date.getUTCMilliseconds()).padStart(3, '0');
+                                        return h + ':' + m + ':' + s + '.' + ms;
+                                    }}
+                                }}
+                            }});
+                        }}
+                    }}
+                    
                     el.chart.setOption({{
+                        xAxis: xAxisConfig,
                         axisPointer: {{
                             link: [{{xAxisIndex: 'all'}}],
                             label: {{

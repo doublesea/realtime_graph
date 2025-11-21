@@ -420,7 +420,7 @@ def main_page():
                 tab_chart = ui.tab('图表显示', icon='timeline')
                 tab_info = ui.tab('系统信息', icon='info')
             
-            with ui.tab_panels(tabs, value=tab_chart).classes('w-full flex-grow'):
+            with ui.tab_panels(tabs, value=tab_info).classes('w-full flex-grow'):
                 # Tab 1: 图表显示
                 with ui.tab_panel(tab_chart):
                     app.chart_container = ui.column().classes('w-full')
