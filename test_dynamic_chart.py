@@ -6,6 +6,7 @@
 3. 开始按钮，添加数据，滚动显示（30秒窗口）
 4. 结束时显示所有历史数据
 """
+import time
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -320,6 +321,8 @@ class DynamicChartApp:
 def main_page():
     """主页面"""
     app = DynamicChartApp()
+
+    time.sleep(10)
     
     # 页眉
     with ui.header(elevated=True).classes('items-center justify-between').style(
@@ -421,31 +424,6 @@ def main_page():
                 tab_info = ui.tab('系统信息', icon='info')
             
             with ui.tab_panels(tabs, value=tab_info).classes('w-full flex-grow'):
-                # Tab 1: 图表显示
-                with ui.tab_panel(tab_chart):
-                    app.chart_container = ui.column().classes('w-full')
-                    
-                    # 初始化时创建一个空图表，确保JavaScript正确注入
-                    # 使用一个信号作为占位符
-                    initial_signal_types = {
-                        'placeholder_[0]': {'type': 'numeric'}
-                    }
-                    app.realtime_plot = RealtimePlot(
-                        num_signals=1,
-                        window_seconds=30.0,
-                        signal_types=initial_signal_types
-                    )
-                    initial_option = app.realtime_plot.get_option()
-                    
-                    with app.chart_container:
-                        app.chart_widget = RealtimeChartWidget(initial_option)
-                        app.chart_widget.update_enum_labels(initial_signal_types)
-                        
-                        # 显示提示信息
-                        with ui.card().classes('w-full').style('margin-top: 20px; background-color: #e3f2fd;'):
-                            ui.label('👈 请先在左侧选择信号').classes('text-h6').style(
-                                'color: #1976d2; text-align: center; padding: 50px;'
-                            )
                 
                 # Tab 2: 系统信息
                 with ui.tab_panel(tab_info):
@@ -492,6 +470,31 @@ def main_page():
                         </div>
                         ''')
     
+                # Tab 1: 图表显示
+                with ui.tab_panel(tab_chart):
+                    app.chart_container = ui.column().classes('w-full')
+                    
+                    # 初始化时创建一个空图表，确保JavaScript正确注入
+                    # 使用一个信号作为占位符
+                    initial_signal_types = {
+                        'placeholder_[0]': {'type': 'numeric'}
+                    }
+                    app.realtime_plot = RealtimePlot(
+                        num_signals=1,
+                        window_seconds=30.0,
+                        signal_types=initial_signal_types
+                    )
+                    initial_option = app.realtime_plot.get_option()
+                    
+                    with app.chart_container:
+                        app.chart_widget = RealtimeChartWidget(initial_option)
+                        app.chart_widget.update_enum_labels(initial_signal_types)
+                        
+                        # 显示提示信息
+                        with ui.card().classes('w-full').style('margin-top: 20px; background-color: #e3f2fd;'):
+                            ui.label('👈 请先在左侧选择信号').classes('text-h6').style(
+                                'color: #1976d2; text-align: center; padding: 50px;'
+                            )
     # 页脚
     with ui.footer().style(
         'background-color: #263238; color: white; padding: 15px; text-align: center;'

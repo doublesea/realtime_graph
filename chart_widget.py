@@ -80,6 +80,7 @@ class RealtimeChartWidget:
             
             window.chartInstances[INSTANCE_ID] = {{
                 enumLabelsMap: {{}},
+                _currentOption: null,  // 存储当前option，供tooltip使用
                 
                 // Tooltip formatter 函数
                 tooltipFormatter: function(params) {{
@@ -127,8 +128,32 @@ class RealtimeChartWidget:
                             let displayValue;
                             const enumLabels = enumMap[signalIndex.toString()];
                             if (enumLabels) {{
-                                const enumVal = Math.round(v);
-                                displayValue = enumLabels[enumVal.toString()] || enumVal.toString();
+                                // 对于枚举类型，v现在是类别索引，需要从Y轴categories中获取标签
+                                // 首先尝试通过seriesIndex获取对应的Y轴
+                                const yAxisIndex = p.seriesIndex;  // 系列索引对应Y轴索引
+                                
+                                // 尝试从option中获取Y轴categories
+                                let categoryLabel = null;
+                                try {{
+                                    const option = window.chartInstances[INSTANCE_ID]._currentOption;
+                                    if (option && option.yAxis && option.yAxis[yAxisIndex]) {{
+                                        const categories = option.yAxis[yAxisIndex].data;
+                                        const idx = Math.round(v);
+                                        if (categories && idx >= 0 && idx < categories.length) {{
+                                            categoryLabel = categories[idx];
+                                        }}
+                                    }}
+                                }} catch (e) {{
+                                    // 如果获取失败，使用原来的方式
+                                }}
+                                
+                                // 如果成功获取类别标签，使用它；否则使用原来的映射方式
+                                if (categoryLabel) {{
+                                    displayValue = categoryLabel;
+                                }} else {{
+                                    const enumVal = Math.round(v);
+                                    displayValue = enumLabels[enumVal.toString()] || enumVal.toString();
+                                }}
                             }} else {{
                                 displayValue = v.toFixed(3);
                             }}
@@ -340,6 +365,8 @@ class RealtimeChartWidget:
                     // 监听图表更新事件，确保formatter、axisPointer和x轴formatter不被覆盖
                     el.chart.on('finished', function() {{
                         const opt = el.chart.getOption();
+                        // 保存当前option，供tooltip使用
+                        window.chartInstances[INSTANCE_ID]._currentOption = opt;
                         const xAxisCfg = [];
                         if (opt.xAxis) {{
                             for (let i = 0; i < opt.xAxis.length; i++) {{
@@ -465,6 +492,9 @@ class RealtimeChartWidget:
                     // 验证更新后的series数量
                     const option = el.chart.getOption();
                     console.log('After update, chart has', option.series ? option.series.length : 0, 'series');
+                    
+                    // 保存当前option，供tooltip使用
+                    window.chartInstances[{self.instance_id}]._currentOption = option;
                     
                     // 第二步：恢复tooltip、axisPointer和x轴formatter配置
                     const xAxisConfig = [];

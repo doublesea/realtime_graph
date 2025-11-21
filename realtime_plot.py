@@ -347,12 +347,13 @@ class RealtimePlot:
         
         # 更新每个信号的数据
         for i in range(self.num_signals):
-            # 使用列表索引获取信号名
+            # 使用列表索引获取信号名和配置
             if i < len(signal_types_list):
-                signal_name, _ = signal_types_list[i]
+                signal_name, signal_config = signal_types_list[i]
             else:
                 # 如果没有配置，尝试使用默认的 signal_* 列名
                 signal_name = f'signal_{i+1}'
+                signal_config = {'type': 'numeric'}
             
             if signal_name in df.columns:
                 # ECharts 时间序列数据格式：[[timestamp, value], ...]
@@ -362,6 +363,44 @@ class RealtimePlot:
                         for ts, val in zip(timestamps, df[signal_name])
                         if pd.notna(val)]  # 只保留非 NaN 的数据点
                 self.option['series'][i]['data'] = data
+                
+                # 如果是枚举类型，动态更新Y轴类别（只显示实际出现的值）
+                if signal_config['type'] == 'enum' and len(data) > 0:
+                    enum_labels = signal_config.get('enum_labels', {})
+                    
+                    # 收集实际出现的枚举值
+                    actual_values = set()
+                    for _, val in data:
+                        val_int = int(round(val))
+                        if val_int in enum_labels:
+                            actual_values.add(val_int)
+                    
+                    # 按值排序
+                    sorted_values = sorted(actual_values)
+                    
+                    # 构建实际显示的类别列表
+                    if sorted_values:
+                        categories = [enum_labels[v] for v in sorted_values]
+                        
+                        # 创建值到索引的映射
+                        value_to_index = {v: idx for idx, v in enumerate(sorted_values)}
+                        
+                        # 重新映射数据：将原始枚举值转换为新的类别索引
+                        remapped_data = []
+                        for ts, val in data:
+                            val_int = int(round(val))
+                            if val_int in value_to_index:
+                                # 使用新的索引
+                                remapped_data.append([ts, value_to_index[val_int]])
+                        
+                        # 更新series数据为重新映射后的数据
+                        self.option['series'][i]['data'] = remapped_data
+                        
+                        # 更新Y轴配置
+                        self.option['yAxis'][i]['data'] = categories
+                        self.option['yAxis'][i]['_actual_values'] = sorted_values  # 记录实际值
+                        self.option['yAxis'][i]['min'] = 0  # 设置最小值
+                        self.option['yAxis'][i]['max'] = len(categories) - 1 if len(categories) > 1 else 0  # 设置最大值
                 
                 # 根据数据点密度自动调整是否显示符号（点标记）
                 # 如果数据点超过150个，只显示线条，不显示点
