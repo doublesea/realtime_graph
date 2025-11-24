@@ -321,8 +321,6 @@ class DynamicChartApp:
 def main_page():
     """主页面"""
     app = DynamicChartApp()
-
-    time.sleep(10)
     
     # 页眉
     with ui.header(elevated=True).classes('items-center justify-between').style(
@@ -423,7 +421,18 @@ def main_page():
                 tab_chart = ui.tab('图表显示', icon='timeline')
                 tab_info = ui.tab('系统信息', icon='info')
             
-            with ui.tab_panels(tabs, value=tab_info).classes('w-full flex-grow'):
+            # 给图表 tab 添加点击事件来触发初始化
+            def on_chart_tab_click():
+                print(f"[Tab Switch] 图表 tab 被点击")
+                # 延迟一点确保 tab 切换完成
+                ui.timer(0.2, lambda: (
+                    print(f"[Tab Switch] 触发图表初始化..."),
+                    app.chart_widget.ensure_initialized() if hasattr(app, 'chart_widget') and app.chart_widget else None
+                ), once=True)  # 减少延迟到0.2秒
+            
+            tab_chart.on('click', on_chart_tab_click)
+            
+            with ui.tab_panels(tabs, value=tab_info).classes('w-full flex-grow') as panels:
                 
                 # Tab 2: 系统信息
                 with ui.tab_panel(tab_info):
@@ -474,7 +483,8 @@ def main_page():
                 with ui.tab_panel(tab_chart):
                     app.chart_container = ui.column().classes('w-full')
                     
-                    # 初始化时创建一个空图表，确保JavaScript正确注入
+                    # 初始化时创建一个空图表，使用延迟初始化（defer_init=True）
+                    # 因为图表不在初始 tab 页，所以延迟 JavaScript 初始化
                     # 使用一个信号作为占位符
                     initial_signal_types = {
                         'placeholder_[0]': {'type': 'numeric'}
@@ -487,8 +497,10 @@ def main_page():
                     initial_option = app.realtime_plot.get_option()
                     
                     with app.chart_container:
-                        app.chart_widget = RealtimeChartWidget(initial_option)
+                        # 使用 defer_init=True 延迟 JavaScript 初始化
+                        app.chart_widget = RealtimeChartWidget(initial_option, defer_init=True)
                         app.chart_widget.update_enum_labels(initial_signal_types)
+                        print(f"[Chart Widget] 创建完成 (ID: {app.chart_widget.instance_id}), 延迟初始化模式")
                         
                         # 显示提示信息
                         with ui.card().classes('w-full').style('margin-top: 20px; background-color: #e3f2fd;'):
