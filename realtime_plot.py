@@ -23,6 +23,8 @@ class RealtimePlot:
         self.num_signals = min(num_signals, 100)
         self.window_seconds = window_seconds
         self.signal_types = signal_types or {}
+        # 子图顺序：存储子图的索引顺序，默认按 0, 1, 2, ... 排列
+        self.subplot_order = list(range(self.num_signals))
         self.option = self._create_option()
         
         # 内部数据缓存，用于管理时间窗口
@@ -74,46 +76,40 @@ class RealtimePlot:
         grid_left = max(70, min(max_label_length * 7, 200))  # 限制最大200像素
         title_left = 10  # 标题放在最左边
         
+        # 在 ECharts 中，grids、x_axes、y_axes 数组的索引必须等于 gridIndex
+        # 所以我们需要先创建所有 grids、x_axes、y_axes（按原始索引顺序），
+        # 然后根据 subplot_order 调整它们的 top 位置
+        # 同时，titles 和 series 也需要按照 subplot_order 顺序创建
+        
+        # 先创建所有 grids、x_axes、y_axes（按原始索引顺序，gridIndex = 数组索引）
         for i in range(self.num_signals):
+            # 根据 subplot_order 找到当前原始索引的显示位置
+            display_pos = self.subplot_order.index(i)
+            
             # 配置 grid 位置（垂直排列，使用像素定位）
-            top = chart_spacing + i * (chart_height_per_signal + chart_spacing) + 30
+            # 使用 display_pos 来决定显示位置
+            top = chart_spacing + display_pos * (chart_height_per_signal + chart_spacing) + 30
             
             # 根据子图高度调整标题和grid的显示
             title_offset = 22 if chart_height_per_signal >= 100 else 18
             grid_height = chart_height_per_signal - 25 if chart_height_per_signal >= 100 else chart_height_per_signal - 20
             
-            # 获取自定义信号名（如果有的话）
-            if i < len(signal_types_list):
-                display_name = signal_types_list[i][0]  # 使用自定义信号名
-            else:
-                display_name = f'Signal {i+1}'  # 默认名称
-            
-            # 配置标题（显示在每个子图的左上角）
-            titles.append({
-                'text': display_name,
-                'left': title_left,  # 与 grid 的 left 对齐
-                'top': top - title_offset,  # 在 grid 上方
-                'textStyle': {
-                    'fontSize': 13,
-                    'fontWeight': 'bold',
-                    'color': '#333'
-                }
-            })
+            # 配置 grid（gridIndex = i，即数组索引）
             grids.append({
                 'left': grid_left,  # 统一的左边距，确保时间轴对齐
                 'right': 70,
-                'top': top,
+                'top': top,  # 根据显示位置设置 top
                 'height': grid_height,  # 根据总高度动态调整
                 'containLabel': False,  # 禁用自动调整，严格使用left值
                 'show': False,  # 不显示边框，让指示线更连续
                 'backgroundColor': 'transparent'
             })
             
-            # 配置 x 轴（共享时间轴，只在最后一个显示）
-            is_last = (i == self.num_signals - 1)
+            # 配置 x 轴（gridIndex = i，即数组索引）
+            is_last = (display_pos == len(self.subplot_order) - 1)
             x_axes.append({
                 'type': 'time',
-                'gridIndex': i,
+                'gridIndex': i,  # 使用数组索引作为 gridIndex
                 'show': is_last,  # 只有最后一个显示
                 'position': 'bottom',
                 'splitLine': {'show': False},
@@ -136,8 +132,7 @@ class RealtimePlot:
                 }
             })
             
-            # 配置 y 轴（不再显示 name，因为已经在左上角有标题了）
-            # 使用列表索引获取信号配置
+            # 配置 y 轴（gridIndex = i，即数组索引）
             if i < len(signal_types_list):
                 signal_name, signal_config = signal_types_list[i]
             else:
@@ -153,7 +148,7 @@ class RealtimePlot:
                 
                 y_axes.append({
                     'type': 'category',  # 使用类别轴
-                    'gridIndex': i,
+                    'gridIndex': i,  # 使用数组索引作为 gridIndex
                     'data': categories,  # 直接设置类别数据
                     'splitLine': {'show': True, 'lineStyle': {'type': 'dashed', 'color': '#e0e0e0'}},
                     'axisLabel': {
@@ -170,7 +165,7 @@ class RealtimePlot:
                 # 数值信号的 y 轴：自动缩放
                 y_axes.append({
                     'type': 'value',
-                    'gridIndex': i,
+                    'gridIndex': i,  # 使用数组索引作为 gridIndex
                     'splitLine': {'show': True, 'lineStyle': {'type': 'dashed', 'color': '#e0e0e0'}},
                     'scale': True,  # 自动缩放以适应数据
                     'axisLabel': {
@@ -178,17 +173,47 @@ class RealtimePlot:
                     },
                     'splitNumber': 3  # 减少刻度线数量，节省空间
                 })
+        
+        # 按照 subplot_order 顺序创建 titles 和 series
+        for display_pos, original_idx in enumerate(self.subplot_order):
+            # 根据 subplot_order 找到当前原始索引的显示位置
+            top = chart_spacing + display_pos * (chart_height_per_signal + chart_spacing) + 30
+            title_offset = 22 if chart_height_per_signal >= 100 else 18
             
-            # 获取显示名称（已在上面定义）
-            series_name = display_name if i < len(signal_types_list) else f'Signal {i+1}'
+            # 获取自定义信号名（如果有的话）
+            if original_idx < len(signal_types_list):
+                display_name = signal_types_list[original_idx][0]  # 使用自定义信号名
+            else:
+                display_name = f'Signal {original_idx+1}'  # 默认名称
+            
+            # 配置标题（显示在每个子图的左上角）
+            titles.append({
+                'text': display_name,
+                'left': title_left,  # 与 grid 的 left 对齐
+                'top': top - title_offset,  # 在 grid 上方
+                'textStyle': {
+                    'fontSize': 13,
+                    'fontWeight': 'bold',
+                    'color': '#333'
+                }
+            })
+            
+            # 获取信号配置
+            if original_idx < len(signal_types_list):
+                signal_name, signal_config = signal_types_list[original_idx]
+            else:
+                signal_config = {'type': 'numeric'}
+            
+            # 获取显示名称
+            series_name = display_name if original_idx < len(signal_types_list) else f'Signal {original_idx+1}'
             
             # 配置系列（折线图或阶梯图）
             if signal_config['type'] == 'enum':
                 # 枚举信号：使用阶梯图
                 series.append({
                     'type': 'line',
-                    'xAxisIndex': i,
-                    'yAxisIndex': i,
+                    'xAxisIndex': original_idx,  # 使用原始索引
+                    'yAxisIndex': original_idx,  # 使用原始索引
                     'data': [],
                     'name': series_name,
                     'step': 'end',  # 阶梯图样式
@@ -204,8 +229,8 @@ class RealtimePlot:
                 # 数值信号：使用普通折线图
                 series.append({
                     'type': 'line',
-                    'xAxisIndex': i,
-                    'yAxisIndex': i,
+                    'xAxisIndex': original_idx,  # 使用原始索引
+                    'yAxisIndex': original_idx,  # 使用原始索引
                     'data': [],
                     'name': series_name,
                     'smooth': False,
@@ -217,12 +242,19 @@ class RealtimePlot:
                     'animation': False  # 关闭动画以提高性能
                 })
         
+        # 注意：series 数组需要按照原始索引顺序排列（0, 1, 2, ...），
+        # 这样 _update_chart_data 才能正确更新数据
+        # 重新组织 series 数组，使其按照原始索引顺序
+        series_ordered = [None] * self.num_signals
+        for display_pos, original_idx in enumerate(self.subplot_order):
+            series_ordered[original_idx] = series[display_pos]
+        
         return {
-            'grid': grids,
-            'xAxis': x_axes,
-            'yAxis': y_axes,
-            'series': series,
-            'title': titles,  # 添加标题数组，显示在每个子图左上角
+            'grid': grids,  # 按原始索引顺序，但 top 位置根据 subplot_order 设置
+            'xAxis': x_axes,  # 按原始索引顺序，gridIndex = 数组索引
+            'yAxis': y_axes,  # 按原始索引顺序，gridIndex = 数组索引
+            'series': series_ordered,  # 按原始索引顺序排列
+            'title': titles,  # 按 subplot_order 顺序排列
             # 设置图表的总高度
             'height': total_height,
             'axisPointer': {
@@ -524,3 +556,83 @@ class RealtimePlot:
             DataFrame 或 None
         """
         return self._data_buffer.copy() if self._data_buffer is not None else None
+    
+    def set_subplot_order(self, new_order: list):
+        """
+        设置子图顺序
+        
+        Args:
+            new_order: 新的子图顺序列表，例如 [2, 0, 1, 3] 表示将索引2的子图放在最上面
+                      必须包含所有索引 0 到 num_signals-1，且不重复
+        """
+        # 验证顺序列表
+        if len(new_order) != self.num_signals:
+            raise ValueError(f"顺序列表长度必须等于信号数量 {self.num_signals}")
+        if set(new_order) != set(range(self.num_signals)):
+            raise ValueError(f"顺序列表必须包含所有索引 0 到 {self.num_signals-1}")
+        
+        self.subplot_order = new_order.copy()
+        # 重新生成配置
+        self.option = self._create_option()
+        # 如果已有数据，需要重新更新数据到新配置中
+        if self._data_buffer is not None and not self._data_buffer.empty:
+            self._update_chart_data(self._trim_data_by_window(self._data_buffer))
+    
+    def move_subplot_up(self, index: int):
+        """
+        将指定索引的子图向上移动一个位置
+        
+        Args:
+            index: 要移动的子图索引（原始索引，不是显示位置）
+        """
+        if index < 0 or index >= self.num_signals:
+            raise ValueError(f"索引必须在 0 到 {self.num_signals-1} 之间")
+        
+        # 找到当前显示位置
+        current_pos = self.subplot_order.index(index)
+        if current_pos == 0:
+            return  # 已经在最上面，无法上移
+        
+        # 交换位置
+        self.subplot_order[current_pos], self.subplot_order[current_pos - 1] = \
+            self.subplot_order[current_pos - 1], self.subplot_order[current_pos]
+        
+        # 重新生成配置
+        self.option = self._create_option()
+        # 如果已有数据，需要重新更新数据到新配置中
+        if self._data_buffer is not None and not self._data_buffer.empty:
+            self._update_chart_data(self._trim_data_by_window(self._data_buffer))
+    
+    def move_subplot_down(self, index: int):
+        """
+        将指定索引的子图向下移动一个位置
+        
+        Args:
+            index: 要移动的子图索引（原始索引，不是显示位置）
+        """
+        if index < 0 or index >= self.num_signals:
+            raise ValueError(f"索引必须在 0 到 {self.num_signals-1} 之间")
+        
+        # 找到当前显示位置
+        current_pos = self.subplot_order.index(index)
+        if current_pos == len(self.subplot_order) - 1:
+            return  # 已经在最下面，无法下移
+        
+        # 交换位置
+        self.subplot_order[current_pos], self.subplot_order[current_pos + 1] = \
+            self.subplot_order[current_pos + 1], self.subplot_order[current_pos]
+        
+        # 重新生成配置
+        self.option = self._create_option()
+        # 如果已有数据，需要重新更新数据到新配置中
+        if self._data_buffer is not None and not self._data_buffer.empty:
+            self._update_chart_data(self._trim_data_by_window(self._data_buffer))
+    
+    def get_subplot_order(self) -> list:
+        """
+        获取当前子图顺序
+        
+        Returns:
+            子图顺序列表
+        """
+        return self.subplot_order.copy()

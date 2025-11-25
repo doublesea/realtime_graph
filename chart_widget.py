@@ -66,40 +66,68 @@ class RealtimeChartWidget:
         instance_id = self.instance_id
         
         # 在 defer_init 模式下，只创建命名空间，setupTooltip 通过 _do_initialize 动态注入
-        ui.add_body_html(f'''
-        <script>
-        (function() {{
-            console.log('=== Chart Widget Namespace Setup (Deferred) ===');
-            console.log('Instance ID:', {instance_id});
-            console.log('Chart ID:', {chart_id});
-            
-            const INSTANCE_ID = {instance_id};
-            const CHART_ID = {chart_id};
-            
-            // 创建命名空间
-            if (!window.chartInstances) {{
-                window.chartInstances = {{}};
-            }}
-            
-            window.chartInstances[INSTANCE_ID] = {{
-                chartId: CHART_ID,
-                enumLabelsMap: {{}},
-                _currentOption: null,
-                _initialized: false,
+        # 使用 add_body_html 在页面加载时注入（初始化时可用）
+        tooltip_code = self._get_tooltip_formatter_code()
+        try:
+            # 在初始化时，add_body_html 应该可用
+            ui.add_body_html(f'''
+            <script>
+            (function() {{
+                console.log('=== Chart Widget Namespace Setup (Deferred) ===');
+                console.log('Instance ID:', {instance_id});
+                console.log('Chart ID:', {chart_id});
                 
-                tooltipFormatter: function(params) {{
-                    {self._get_tooltip_formatter_code()}
-                }},
+                const INSTANCE_ID = {instance_id};
+                const CHART_ID = {chart_id};
                 
-                updateEnumLabels: function(newLabels) {{
-                    window.chartInstances[INSTANCE_ID].enumLabelsMap = newLabels;
+                // 创建命名空间
+                if (!window.chartInstances) {{
+                    window.chartInstances = {{}};
                 }}
-            }};
-            
-            console.log('Namespace created for instance', INSTANCE_ID, '(waiting for initialization)');
-        }})();
-        </script>
-        ''')
+                
+                window.chartInstances[INSTANCE_ID] = {{
+                    chartId: CHART_ID,
+                    enumLabelsMap: {{}},
+                    _currentOption: null,
+                    _initialized: false,
+                    
+                    tooltipFormatter: function(params) {{
+                        {tooltip_code}
+                    }},
+                    
+                    updateEnumLabels: function(newLabels) {{
+                        window.chartInstances[INSTANCE_ID].enumLabelsMap = newLabels;
+                    }}
+                }};
+                
+                console.log('Namespace created for instance', INSTANCE_ID, '(waiting for initialization)');
+            }})();
+            </script>
+            ''')
+        except Exception:
+            # 如果 add_body_html 失败，使用 timer 延迟执行 run_javascript
+            ui.timer(0.1, lambda: ui.run_javascript(f'''
+            (function() {{
+                console.log('=== Chart Widget Namespace Setup (Deferred) ===');
+                const INSTANCE_ID = {instance_id};
+                const CHART_ID = {chart_id};
+                if (!window.chartInstances) {{
+                    window.chartInstances = {{}};
+                }}
+                window.chartInstances[INSTANCE_ID] = {{
+                    chartId: CHART_ID,
+                    enumLabelsMap: {{}},
+                    _currentOption: null,
+                    _initialized: false,
+                    tooltipFormatter: function(params) {{
+                        {tooltip_code}
+                    }},
+                    updateEnumLabels: function(newLabels) {{
+                        window.chartInstances[INSTANCE_ID].enumLabelsMap = newLabels;
+                    }}
+                }};
+            }})();
+            '''), once=True)
     
     def ensure_initialized(self):
         """
@@ -757,18 +785,37 @@ class RealtimeChartWidget:
             }}
         '''
         
-        # 通过 run_javascript 立即执行
+        # 通过 run_javascript 执行，如果事件循环未准备好则延迟执行
+        def execute_update():
+            """执行更新脚本"""
+            try:
+                ui.run_javascript(update_script)
+            except (AssertionError, RuntimeError) as e:
+                # 如果事件循环未准备好，使用 add_body_html 作为备选方案
+                # 注意：add_body_html 在初始化时可能返回协程，但会被 NiceGUI 自动处理
+                import time
+                timestamp = int(time.time() * 1000)
+                script_id = f'enum-labels-{self.instance_id}-{timestamp}'
+                try:
+                    # 尝试使用 add_body_html（在初始化时可用）
+                    result = ui.add_body_html(f'''
+                    <script id="{script_id}">
+                        {update_script}
+                    </script>
+                    ''')
+                    # 如果返回协程，忽略它（NiceGUI 会在后台处理）
+                    if hasattr(result, '__await__'):
+                        pass  # 协程会被 NiceGUI 自动处理
+                except Exception:
+                    # 如果 add_body_html 也失败，使用 timer 延迟执行
+                    ui.timer(0.1, lambda: ui.run_javascript(update_script), once=True)
+        
+        # 尝试立即执行，如果失败则延迟
         try:
-            ui.run_javascript(update_script)
-        except Exception as e:
-            # 如果 run_javascript 失败，使用 add_body_html 作为备选方案
-            import time
-            timestamp = int(time.time() * 1000)
-            ui.add_body_html(f'''
-            <script id="enum-labels-{self.instance_id}-{timestamp}">
-                {update_script}
-            </script>
-            ''')
+            execute_update()
+        except (AssertionError, RuntimeError):
+            # 事件循环未准备好，延迟执行
+            ui.timer(0.1, execute_update, once=True)
     
     def update_chart_option(self, new_option: Dict[str, Any], exclude_tooltip: bool = True):
         """
@@ -793,8 +840,10 @@ class RealtimeChartWidget:
         import json
         config_json = json.dumps(update_config)
         
-        try:
-            ui.run_javascript(f'''
+        def execute_update():
+            """执行图表更新"""
+            try:
+                ui.run_javascript(f'''
                 const el = getElement({self.chart_element.id});
                 if (el && el.chart) {{
                     const newConfig = {config_json};
@@ -864,10 +913,21 @@ class RealtimeChartWidget:
                     console.log('Tooltip and axisPointer restored for instance {self.instance_id}');
                 }}
             ''')
-        except Exception as e:
-            # 备用方案：直接更新options
-            for key, value in update_config.items():
-                self.chart_element.options[key] = value
+            except (AssertionError, RuntimeError) as e:
+                # 事件循环未准备好，延迟执行
+                ui.timer(0.1, execute_update, once=True)
+                return
+            except Exception as e:
+                # 备用方案：直接更新options
+                for key, value in update_config.items():
+                    self.chart_element.options[key] = value
+        
+        # 尝试立即执行，如果失败则延迟
+        try:
+            execute_update()
+        except (AssertionError, RuntimeError):
+            # 事件循环未准备好，延迟执行
+            ui.timer(0.1, execute_update, once=True)
         
         # 更新样式
         self.chart_element._props['style'] = f'height: {new_height}px; width: 100%; min-height: {new_height}px;'
