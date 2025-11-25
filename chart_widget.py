@@ -131,9 +131,29 @@ class RealtimeChartWidget:
                 
                 console.log('=== Manual Initialization Triggered for Instance', INSTANCE_ID, '===');
                 
-                if (!window.chartInstances || !window.chartInstances[INSTANCE_ID]) {{
-                    console.error('Chart instance namespace not found!');
-                    return;
+                // 确保命名空间存在，如果不存在则创建
+                if (!window.chartInstances) {{
+                    window.chartInstances = {{}};
+                    console.log('Created window.chartInstances');
+                }}
+                
+                if (!window.chartInstances[INSTANCE_ID]) {{
+                    console.warn('Namespace not found for instance', INSTANCE_ID, ', creating it now...');
+                    window.chartInstances[INSTANCE_ID] = {{
+                        chartId: CHART_ID,
+                        enumLabelsMap: {{}},
+                        _currentOption: null,
+                        _initialized: false,
+                        
+                        tooltipFormatter: function(params) {{
+                            {self._get_tooltip_formatter_code()}
+                        }},
+                        
+                        updateEnumLabels: function(newLabels) {{
+                            window.chartInstances[INSTANCE_ID].enumLabelsMap = newLabels;
+                        }}
+                    }};
+                    console.log('Namespace created on-the-fly for instance', INSTANCE_ID);
                 }}
                 
                 if (window.chartInstances[INSTANCE_ID]._initialized) {{
