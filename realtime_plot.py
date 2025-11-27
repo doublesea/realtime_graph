@@ -11,7 +11,7 @@ from typing import Optional
 class RealtimePlot:
     """实时多信号绘图控件（ECharts 版本）"""
     
-    def __init__(self, num_signals: int = 50, window_seconds: float = 60.0, signal_types: Optional[dict] = None):
+    def __init__(self, num_signals: int = 50, window_seconds: float = 60.0, signal_types: Optional[dict] = None, max_time_gap_seconds: float = 1.0):
         """
         初始化实时绘图控件
         
@@ -19,10 +19,12 @@ class RealtimePlot:
             num_signals: 信号数量（最多100个）
             window_seconds: 数据窗口大小（秒）
             signal_types: 信号类型配置字典，格式：{'signal_1': {'type': 'numeric'/'enum', 'enum_labels': {0: 'OFF', 1: 'ON'}}}
+            max_time_gap_seconds: 最大时间间隔（秒），超过此间隔的数据点之间不连线，默认1.0秒
         """
         self.num_signals = min(num_signals, 100)
         self.window_seconds = window_seconds
         self.signal_types = signal_types or {}
+        self.max_time_gap_seconds = max_time_gap_seconds  # 最大时间间隔（秒）
         # 子图顺序：存储子图的索引顺序，默认按 0, 1, 2, ... 排列
         self.subplot_order = list(range(self.num_signals))
         self.option = self._create_option()
@@ -169,6 +171,7 @@ class RealtimePlot:
                     'splitLine': {'show': True, 'lineStyle': {'type': 'dashed', 'color': '#e0e0e0'}},
                     'scale': True,  # 自动缩放以适应数据
                     'axisLabel': {
+                        'show': True,  # 显式启用y轴标签显示
                         'fontSize': 9
                     },
                     'splitNumber': 3  # 减少刻度线数量，节省空间
@@ -391,21 +394,40 @@ class RealtimePlot:
                 # ECharts 时间序列数据格式：[[timestamp, value], ...]
                 # 关键改进：只传递有效数据点，跳过 NaN 值
                 # 这样 ECharts 只会在有数据的时间点显示点和连线
-                data = [[ts, float(val)] 
-                        for ts, val in zip(timestamps, df[signal_name])
-                        if pd.notna(val)]  # 只保留非 NaN 的数据点
+                valid_data = [[ts, float(val)] 
+                             for ts, val in zip(timestamps, df[signal_name])
+                             if pd.notna(val)]  # 只保留非 NaN 的数据点
+                
+                # 处理数据点间隔：如果相邻数据点时间间隔超过阈值，插入 null 值断开连线
+                if len(valid_data) > 1 and self.max_time_gap_seconds > 0:
+                    data = []
+                    max_gap_ms = self.max_time_gap_seconds * 1000  # 转换为毫秒
+                    for j, (ts, val) in enumerate(valid_data):
+                        data.append([ts, val])
+                        # 检查与下一个数据点的时间间隔
+                        if j < len(valid_data) - 1:
+                            next_ts = valid_data[j + 1][0]
+                            time_gap = next_ts - ts
+                            if time_gap > max_gap_ms:
+                                # 时间间隔过大，插入 null 值断开连线
+                                # 在下一个点之前插入一个 null 点，时间戳设为下一个点的时间戳
+                                data.append([next_ts, None])
+                else:
+                    data = valid_data
+                
                 self.option['series'][i]['data'] = data
                 
                 # 如果是枚举类型，动态更新Y轴类别（只显示实际出现的值）
                 if signal_config['type'] == 'enum' and len(data) > 0:
                     enum_labels = signal_config.get('enum_labels', {})
                     
-                    # 收集实际出现的枚举值
+                    # 收集实际出现的枚举值（跳过 null 值）
                     actual_values = set()
                     for _, val in data:
-                        val_int = int(round(val))
-                        if val_int in enum_labels:
-                            actual_values.add(val_int)
+                        if val is not None:
+                            val_int = int(round(val))
+                            if val_int in enum_labels:
+                                actual_values.add(val_int)
                     
                     # 按值排序
                     sorted_values = sorted(actual_values)
@@ -420,10 +442,14 @@ class RealtimePlot:
                         # 重新映射数据：将原始枚举值转换为新的类别索引
                         remapped_data = []
                         for ts, val in data:
-                            val_int = int(round(val))
-                            if val_int in value_to_index:
-                                # 使用新的索引
-                                remapped_data.append([ts, value_to_index[val_int]])
+                            # 保留 null 值，用于断开连线
+                            if val is None:
+                                remapped_data.append([ts, None])
+                            else:
+                                val_int = int(round(val))
+                                if val_int in value_to_index:
+                                    # 使用新的索引
+                                    remapped_data.append([ts, value_to_index[val_int]])
                         
                         # 更新series数据为重新映射后的数据
                         self.option['series'][i]['data'] = remapped_data

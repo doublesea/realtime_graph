@@ -45,6 +45,7 @@ class DynamicChartApp:
         self.current_time = datetime.now()
         self.start_time = None
         self.data_history = None  # 存储所有历史数据
+        self.data_point_count = 0  # 数据点计数器，用于生成时间间隔
         
         # UI组件引用
         self.chart_widget = None
@@ -69,7 +70,23 @@ class DynamicChartApp:
         if not self.selected_signals:
             return None
         
-        self.current_time += timedelta(milliseconds=100)  # 每次前进100ms
+        # 正常时间步进：每次前进100ms
+        time_step = timedelta(milliseconds=100)
+        
+        # 每隔一段时间产生时间间隔，用于测试断开连线功能
+        # 在多个位置产生时间间隔，让测试效果更明显
+        if self.data_point_count > 0:
+            # 每30个点产生一个间隔（约3秒后）
+            if self.data_point_count % 30 == 0:
+                time_step = timedelta(seconds=1.5)  # 1.5秒，超过默认的1秒阈值
+                ui.notify(f'产生时间间隔：跳过 {time_step.total_seconds():.1f} 秒', type='info')
+            # 每80个点产生一个更大的间隔（约8秒后）
+            elif self.data_point_count % 80 == 0:
+                time_step = timedelta(seconds=3.0)  # 3秒，更大的间隔
+                ui.notify(f'产生大时间间隔：跳过 {time_step.total_seconds():.1f} 秒', type='warning')
+        
+        self.current_time += time_step
+        self.data_point_count += 1
         
         data = {'timestamp': [self.current_time]}
         
@@ -194,6 +211,7 @@ class DynamicChartApp:
         self.start_time = datetime.now()
         self.current_time = self.start_time
         self.data_history = None  # 重置历史数据
+        self.data_point_count = 0  # 重置数据点计数器
         
         # 更新UI状态
         self.start_btn.disable()

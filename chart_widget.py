@@ -303,6 +303,93 @@ class RealtimeChartWidget:
                                 chartDom.addEventListener('mouseleave', mouseLeaveHandler);
                             }}
                             
+                            // 根据可见范围内的数据点数量动态调整点标记显示
+                            function updateSymbolVisibility() {{
+                                const opt = el.chart.getOption();
+                                if (!opt.series || !opt.dataZoom || opt.dataZoom.length === 0) return;
+                                
+                                // 找到 inside 类型的 dataZoom（主要的缩放控制器）
+                                let dataZoom = null;
+                                for (let i = 0; i < opt.dataZoom.length; i++) {{
+                                    if (opt.dataZoom[i].type === 'inside') {{
+                                        dataZoom = opt.dataZoom[i];
+                                        break;
+                                    }}
+                                }}
+                                // 如果没找到 inside 类型，使用第一个
+                                if (!dataZoom) {{
+                                    dataZoom = opt.dataZoom[0];
+                                }}
+                                
+                                const startPercent = dataZoom.start !== undefined ? dataZoom.start : 0;
+                                const endPercent = dataZoom.end !== undefined ? dataZoom.end : 100;
+                                
+                                let needUpdate = false;
+                                const seriesUpdate = [];
+                                
+                                for (let i = 0; i < opt.series.length; i++) {{
+                                    if (!opt.series[i].data || opt.series[i].data.length === 0) {{
+                                        seriesUpdate.push(null);
+                                        continue;
+                                    }}
+                                    
+                                    const totalPoints = opt.series[i].data.length;
+                                    // 计算可见范围内的数据点数量
+                                    const visibleStartIndex = Math.floor(totalPoints * startPercent / 100);
+                                    const visibleEndIndex = Math.ceil(totalPoints * endPercent / 100);
+                                    const visiblePointCount = visibleEndIndex - visibleStartIndex;
+                                    
+                                    // 根据可见数据点密度决定是否显示点标记
+                                    let showSymbol = opt.series[i].showSymbol;
+                                    let symbolSize = opt.series[i].symbolSize || 6;
+                                    
+                                    if (visiblePointCount > 150) {{
+                                        // 密集：不显示点
+                                        if (showSymbol !== false) {{
+                                            showSymbol = false;
+                                            symbolSize = 4;
+                                            needUpdate = true;
+                                        }}
+                                    }} else if (visiblePointCount > 50) {{
+                                        // 中等：显示小点
+                                        if (showSymbol !== true || symbolSize !== 4) {{
+                                            showSymbol = true;
+                                            symbolSize = 4;
+                                            needUpdate = true;
+                                        }}
+                                    }} else {{
+                                        // 稀疏：显示正常大小的点
+                                        if (showSymbol !== true || symbolSize !== 6) {{
+                                            showSymbol = true;
+                                            symbolSize = 6;
+                                            needUpdate = true;
+                                        }}
+                                    }}
+                                    
+                                    seriesUpdate.push({{
+                                        showSymbol: showSymbol,
+                                        symbolSize: symbolSize
+                                    }});
+                                }}
+                                
+                                if (needUpdate) {{
+                                    const seriesConfig = [];
+                                    for (let i = 0; i < seriesUpdate.length; i++) {{
+                                        if (seriesUpdate[i]) {{
+                                            seriesConfig.push({{
+                                                showSymbol: seriesUpdate[i].showSymbol,
+                                                symbolSize: seriesUpdate[i].symbolSize
+                                            }});
+                                        }} else {{
+                                            seriesConfig.push({{}});
+                                        }}
+                                    }}
+                                    el.chart.setOption({{
+                                        series: seriesConfig
+                                    }}, false, false);
+                                }}
+                            }}
+                            
                             el.chart.on('finished', function() {{
                                 const opt = el.chart.getOption();
                                 window.chartInstances[INSTANCE_ID]._currentOption = opt;
@@ -328,6 +415,14 @@ class RealtimeChartWidget:
                                     axisPointer: {{ link: [{{xAxisIndex: 'all'}}] }},
                                     tooltip: {{ formatter: window.chartInstances[INSTANCE_ID].tooltipFormatter }}
                                 }}, false);
+                                
+                                // 根据可见范围调整点标记显示
+                                updateSymbolVisibility();
+                            }});
+                            
+                            // 监听 dataZoom 事件，当用户缩放时动态调整点标记
+                            el.chart.on('dataZoom', function() {{
+                                updateSymbolVisibility();
                             }});
                             
                             window.chartInstances[INSTANCE_ID]._initialized = true;
@@ -693,6 +788,101 @@ class RealtimeChartWidget:
                                 formatter: window.chartInstances[INSTANCE_ID].tooltipFormatter
                             }}
                         }}, false);
+                        
+                        // 根据可见范围调整点标记显示
+                        updateSymbolVisibility();
+                    }});
+                    
+                    // 根据可见范围内的数据点数量动态调整点标记显示
+                    function updateSymbolVisibility() {{
+                        const opt = el.chart.getOption();
+                        if (!opt.series || !opt.dataZoom || opt.dataZoom.length === 0) return;
+                        
+                        // 找到 inside 类型的 dataZoom（主要的缩放控制器）
+                        let dataZoom = null;
+                        for (let i = 0; i < opt.dataZoom.length; i++) {{
+                            if (opt.dataZoom[i].type === 'inside') {{
+                                dataZoom = opt.dataZoom[i];
+                                break;
+                            }}
+                        }}
+                        // 如果没找到 inside 类型，使用第一个
+                        if (!dataZoom) {{
+                            dataZoom = opt.dataZoom[0];
+                        }}
+                        
+                        const startPercent = dataZoom.start !== undefined ? dataZoom.start : 0;
+                        const endPercent = dataZoom.end !== undefined ? dataZoom.end : 100;
+                        
+                        let needUpdate = false;
+                        const seriesUpdate = [];
+                        
+                        for (let i = 0; i < opt.series.length; i++) {{
+                            if (!opt.series[i].data || opt.series[i].data.length === 0) {{
+                                seriesUpdate.push(null);
+                                continue;
+                            }}
+                            
+                            const totalPoints = opt.series[i].data.length;
+                            // 计算可见范围内的数据点数量
+                            const visibleStartIndex = Math.floor(totalPoints * startPercent / 100);
+                            const visibleEndIndex = Math.ceil(totalPoints * endPercent / 100);
+                            const visiblePointCount = visibleEndIndex - visibleStartIndex;
+                            
+                            // 根据可见数据点密度决定是否显示点标记
+                            let showSymbol = opt.series[i].showSymbol;
+                            let symbolSize = opt.series[i].symbolSize || 6;
+                            
+                            if (visiblePointCount > 150) {{
+                                // 密集：不显示点
+                                if (showSymbol !== false) {{
+                                    showSymbol = false;
+                                    symbolSize = 4;
+                                    needUpdate = true;
+                                }}
+                            }} else if (visiblePointCount > 50) {{
+                                // 中等：显示小点
+                                if (showSymbol !== true || symbolSize !== 4) {{
+                                    showSymbol = true;
+                                    symbolSize = 4;
+                                    needUpdate = true;
+                                }}
+                            }} else {{
+                                // 稀疏：显示正常大小的点
+                                if (showSymbol !== true || symbolSize !== 6) {{
+                                    showSymbol = true;
+                                    symbolSize = 6;
+                                    needUpdate = true;
+                                }}
+                            }}
+                            
+                            seriesUpdate.push({{
+                                showSymbol: showSymbol,
+                                symbolSize: symbolSize
+                            }});
+                        }}
+                        
+                        if (needUpdate) {{
+                            const seriesConfig = [];
+                            for (let i = 0; i < seriesUpdate.length; i++) {{
+                                if (seriesUpdate[i]) {{
+                                    seriesConfig.push({{
+                                        showSymbol: seriesUpdate[i].showSymbol,
+                                        symbolSize: seriesUpdate[i].symbolSize
+                                    }});
+                                }} else {{
+                                    seriesConfig.push({{}});
+                                }}
+                            }}
+                            el.chart.setOption({{
+                                series: seriesConfig
+                            }}, false, false);
+                        }}
+                    }}
+                    
+                    // 监听 dataZoom 事件，当用户缩放时动态调整点标记
+                    el.chart.on('dataZoom', function() {{
+                        updateSymbolVisibility();
                     }});
                     
                     // 标记为已初始化
