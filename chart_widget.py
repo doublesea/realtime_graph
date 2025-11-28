@@ -57,6 +57,8 @@ class RealtimeChartWidget:
         self.chart_element = ui.echart(self._initial_option).style(
             f'height: {chart_height}px; width: 100%; min-height: {chart_height}px;'
         )
+        # 添加唯一的类名以便在 JS 中精确定位
+        self.chart_element.classes(f'chart-instance-{self.instance_id}')
         
         # 根据 defer_init 决定是否立即初始化 JavaScript
         if not self._defer_init:
@@ -1297,9 +1299,9 @@ class RealtimeChartWidget:
         ui.add_body_html(f'''
         <script>
         (function() {{
-            const chartId = {chart_id};
             const instanceId = '{instance_id}';
-            const triggerBtnId = 'c{trigger_btn_id}'; // NiceGUI 元素 ID 前缀通常是 'c'
+            const targetClass = 'chart-instance-' + instanceId;
+            const triggerBtnId = '{trigger_btn_id}'; 
             let menuVisible = false;
             
             // 创建右键菜单
@@ -1324,124 +1326,79 @@ class RealtimeChartWidget:
                 }});
             }});
             
-            function showMenu(e) {{
-                e.preventDefault();
-                e.stopPropagation();
-                menu.style.display = 'block';
-                // 使用 clientX/Y 配合 position: fixed，解决页面滚动时的位置偏移问题
-                menu.style.left = e.clientX + 'px';
-                menu.style.top = e.clientY + 'px';
-                menuVisible = true;
-            }}
+            // 全局委托监听器：监听 document 的 contextmenu 事件
+            // 使用捕获阶段 (useCapture=true) 确保优先处理
+            document.addEventListener('contextmenu', function(e) {{
+                // 检查点击目标是否位于当前图表实例内
+                const chartContainer = e.target.closest('.' + targetClass);
+                
+                if (chartContainer) {{
+                    // 是当前图表，拦截事件并显示菜单
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    // 隐藏其他所有菜单
+                    document.querySelectorAll('[id^="context-menu-"]').forEach(m => {{
+                        if (m.id !== menu.id) m.style.display = 'none';
+                    }});
+                    
+                    menu.style.display = 'block';
+                    menu.style.left = e.clientX + 'px';
+                    menu.style.top = e.clientY + 'px';
+                    menuVisible = true;
+                    
+                    console.log('Right click intercepted for chart instance', instanceId);
+                }} else if (menuVisible) {{
+                    // 如果不是点击当前图表且菜单可见，隐藏菜单
+                    // (注意：这可能与全局 click 监听器重叠，但多重保障无害)
+                    menu.style.display = 'none';
+                    menuVisible = false;
+                }}
+            }}, true); // useCapture=true
             
-            function hideMenu() {{
+            // 点击任意位置隐藏菜单
+            document.addEventListener('click', function(e) {{
+                // 如果点击的是菜单本身，不隐藏 (交给菜单项点击处理)
+                if (menu.contains(e.target)) return;
+                
                 menu.style.display = 'none';
                 menuVisible = false;
-            }}
-            
-            // 获取图表容器
-            function getChartContainer() {{
-                try {{
-                    const el = typeof getElement === 'function' ? getElement(chartId) : null;
-                    if (el && el.chart) {{
-                        return el.chart.getDom();
-                    }}
-                }} catch (e) {{
-                    console.warn('Failed to get chart element:', e);
-                }}
-                // 备用方案：查找所有 .echarts 元素
-                const elements = document.querySelectorAll('.echarts');
-                for (let elem of elements) {{
-                    if (elem.__nicegui_chart) {{
-                        return elem;
-                    }}
-                }}
-                return null;
-            }}
-            
-            // 延迟绑定事件，确保图表已渲染
-            function setupContextMenu() {{
-                const chartContainer = getChartContainer();
-                if (chartContainer) {{
-                    // 移除旧的事件监听器（如果存在）
-                    const oldHandler = chartContainer._contextMenuHandler;
-                    if (oldHandler) {{
-                        chartContainer.removeEventListener('contextmenu', oldHandler);
-                    }}
-                    
-                    // 添加新的事件监听器
-                    chartContainer.addEventListener('contextmenu', showMenu);
-                    chartContainer._contextMenuHandler = showMenu;
-                    
-                    // 全局点击事件（只添加一次）
-                    if (!window._contextMenuClickHandler) {{
-                        window._contextMenuClickHandler = hideMenu;
-                        document.addEventListener('click', hideMenu);
-                    }}
-                    
-                    // 全局右键事件（只添加一次）
-                    if (!window._contextMenuContextHandler) {{
-                        window._contextMenuContextHandler = function(e) {{
-                            const chartContainer = getChartContainer();
-                            if (chartContainer && e.target !== chartContainer && !chartContainer.contains(e.target)) {{
-                                hideMenu();
-                            }}
-                        }};
-                        document.addEventListener('contextmenu', window._contextMenuContextHandler);
-                    }}
-                    
-                    console.log('Context menu setup for chart', chartId, 'instance', instanceId);
-                    return true;
-                }}
-                return false;
-            }}
-            
-            // 将 setupContextMenu 函数暴露到全局，供延迟初始化调用
-            window.setupContextMenuForInstance = window.setupContextMenuForInstance || {{}};
-            window.setupContextMenuForInstance[instanceId] = setupContextMenu;
-            
-            // 尝试立即设置
-            if (!setupContextMenu()) {{
-                // 如果失败，延迟重试（增加重试次数和延迟时间）
-                let attempts = 0;
-                const maxAttempts = 50; // 增加到50次（5秒）
-                const interval = setInterval(function() {{
-                    if (setupContextMenu()) {{
-                        clearInterval(interval);
-                        console.log('Context menu setup succeeded after', attempts + 1, 'attempts');
-                    }} else if (attempts++ >= maxAttempts) {{
-                        clearInterval(interval);
-                        console.warn('Context menu setup failed after', maxAttempts, 'attempts');
-                    }}
-                }}, 100);
-            }}
+            }});
             
             // 菜单项点击事件
             menu.addEventListener('click', function(e) {{
                 const action = e.target.closest('.menu-item')?.dataset.action;
                 if (action === 'show-sidebar') {{
-                    hideMenu();
-                    // 模拟点击隐藏按钮，触发 Python 回调
-                    // 尝试多种方式找到按钮
-                    let btn = document.getElementById(triggerBtnId);
-                    if (!btn) {{
-                        // 尝试不带前缀 'c'
-                        btn = document.getElementById('{trigger_btn_id}');
+                    menu.style.display = 'none';
+                    menuVisible = false;
+                    
+                    // 触发 Python 回调
+                    const possibleIds = [
+                        'c' + triggerBtnId,         // NiceGUI default
+                        triggerBtnId,               // raw id
+                        'c' + triggerBtnId.replace(/^c/, '') // ensure c prefix
+                    ];
+                    
+                    let btn = null;
+                    for (const id of possibleIds) {{
+                        btn = document.getElementById(id);
+                        if (btn) break;
                     }}
                     
                     if (btn) {{
                         btn.click();
-                        // 对于 NiceGUI，有时需要触发特定的事件
                         btn.dispatchEvent(new MouseEvent('click', {{
                             view: window,
                             bubbles: true,
                             cancelable: true
                         }}));
                     }} else {{
-                        console.error('Trigger button not found:', triggerBtnId);
+                        console.error('Trigger button not found for instance', instanceId);
                     }}
                 }}
             }});
+            
+            console.log('Context menu initialized for instance', instanceId, 'target class:', targetClass);
         }})();
         </script>
         ''')

@@ -340,11 +340,72 @@ def main_page():
     """主页面"""
     app = DynamicChartApp()
     
+    # 左侧抽屉（信号选择）
+    with ui.left_drawer(fixed=False, value=False).classes('bg-blue-100').style('width: 300px;') as drawer:
+        with ui.column().classes('w-full p-4 gap-2'):
+            ui.label('📊 信号选择').classes('text-h6 mb-2').style('color: #1976d2;')
+            ui.separator()
+            
+            # 全选/取消全选按钮
+            with ui.row().classes('gap-2'):
+                def select_all():
+                    for checkbox in app.signal_checkboxes.values():
+                        checkbox.value = True
+                    app.on_signal_selection_changed()
+                
+                def deselect_all():
+                    for checkbox in app.signal_checkboxes.values():
+                        checkbox.value = False
+                
+                ui.button('全选', icon='check_box', on_click=select_all).props('size=sm outline')
+                ui.button('清除', icon='clear', on_click=deselect_all).props('size=sm outline')
+            
+            ui.separator()
+            
+            # 信号选择checkbox
+            for signal_name, config in app.all_signals.items():
+                label = config['label']
+                if config['type'] == 'numeric':
+                    unit = config.get('unit', '')
+                    label_text = f"{label} ({unit})" if unit else label
+                    icon = 'show_chart'
+                else:
+                    label_text = f"{label} (状态)"
+                    icon = 'toggle_on'
+                
+                checkbox = ui.checkbox(label_text).props(f'dense')
+                checkbox.on_value_change(lambda: app.on_signal_selection_changed())
+                app.signal_checkboxes[signal_name] = checkbox
+            
+            ui.separator()
+            
+            # 提示信息
+            with ui.card().style('background-color: #e3f2fd; padding: 10px;'):
+                ui.html('''
+                <div style="font-size: 12px;">
+                    <b>💡 使用提示：</b><br>
+                    1. 选择要显示的信号<br>
+                    2. 点击"开始"按钮<br>
+                    3. 实时数据滚动显示(30秒)<br>
+                    4. 点击"停止"查看全部历史
+                </div>
+                ''')
+    
     # 页眉
     with ui.header(elevated=True).classes('items-center justify-between').style(
         'background: linear-gradient(90deg, #1976d2 0%, #2196f3 100%); padding: 10px 20px;'
     ):
-        ui.label('🚀 动态实时图表系统').classes('text-h5').style('color: white; font-weight: bold;')
+        # 左侧：菜单按钮和标题
+        with ui.row().classes('items-center gap-4'):
+            ui.button(icon='menu', on_click=lambda: drawer.toggle()).props('flat color=white')
+            ui.label('🚀 动态实时图表系统').classes('text-h5').style('color: white; font-weight: bold;')
+        
+        # 中间：Tab页切换
+        with ui.tabs().classes('flex-grow justify-center').style('color: white;') as tabs:
+            tab_chart = ui.tab('图表显示', icon='timeline')
+            tab_info = ui.tab('系统信息', icon='info')
+        
+        # 右侧：时间显示
         with ui.row().classes('gap-2'):
             ui.label(f'当前时间: ').style('color: white;')
             time_label = ui.label().style('color: white; font-weight: bold;')
@@ -355,102 +416,43 @@ def main_page():
             ui.timer(1.0, update_time)
             update_time()
     
-    # 主体内容（使用左右布局）
-    with ui.row().classes('w-full').style('height: calc(100vh - 120px);'):
-        # 左侧边栏（信号选择）
-        with ui.card().classes('w-64').style(
-            'height: 100%; overflow-y: auto; border-right: 2px solid #e0e0e0;'
-        ):
-            ui.label('📊 信号选择').classes('text-h6 mb-2').style('color: #1976d2;')
-            ui.separator()
+    # 主体内容
+    with ui.column().classes('w-full').style('height: calc(100vh - 120px);'):
+        # 控制面板
+        with ui.card().classes('w-full p-4'):
+            ui.label('🎮 控制面板').classes('text-h6 mb-2')
             
-            with ui.column().classes('gap-2 mt-2'):
-                # 全选/取消全选按钮
-                with ui.row().classes('gap-2'):
-                    def select_all():
-                        for checkbox in app.signal_checkboxes.values():
-                            checkbox.value = True
-                        app.on_signal_selection_changed()
-                    
-                    def deselect_all():
-                        for checkbox in app.signal_checkboxes.values():
-                            checkbox.value = False
-                    
-                    ui.button('全选', icon='check_box', on_click=select_all).props('size=sm outline')
-                    ui.button('清除', icon='clear', on_click=deselect_all).props('size=sm outline')
-                
-                ui.separator()
-                
-                # 信号选择checkbox
-                for signal_name, config in app.all_signals.items():
-                    label = config['label']
-                    if config['type'] == 'numeric':
-                        unit = config.get('unit', '')
-                        label_text = f"{label} ({unit})" if unit else label
-                        icon = 'show_chart'
-                    else:
-                        label_text = f"{label} (状态)"
-                        icon = 'toggle_on'
-                    
-                    checkbox = ui.checkbox(label_text).props(f'dense')
-                    checkbox.on_value_change(lambda: app.on_signal_selection_changed())
-                    app.signal_checkboxes[signal_name] = checkbox
-                
-                ui.separator()
-                
-                # 提示信息
-                with ui.card().style('background-color: #e3f2fd; padding: 10px;'):
-                    ui.html('''
-                    <div style="font-size: 12px;">
-                        <b>💡 使用提示：</b><br>
-                        1. 选择要显示的信号<br>
-                        2. 点击"开始"按钮<br>
-                        3. 实时数据滚动显示(30秒)<br>
-                        4. 点击"停止"查看全部历史
-                    </div>
-                    ''')
+            # 统计信息
+            with ui.row().classes('gap-4 items-center mb-2'):
+                app.data_points_label = ui.label('数据点数: 0')
+                app.time_span_label = ui.label('时间跨度: 0.0 秒')
+                ui.label(f'信号数量: 0').bind_text_from(
+                    app, 'selected_signals', 
+                    backward=lambda x: f'信号数量: {len(x)}'
+                )
+            
+            # 控制按钮
+            with ui.row().classes('gap-2 items-center'):
+                app.start_btn = ui.button('开始', icon='play_arrow', 
+                                          on_click=app.start_data_generation).props('color=green')
+                app.stop_btn = ui.button('停止', icon='stop', 
+                                        on_click=app.stop_data_generation).props('color=red')
+                app.stop_btn.disable()
+                app.status_label = ui.label('状态: 准备就绪').style('font-weight: bold;')
         
-        # 右侧主体内容
-        with ui.column().classes('flex-grow'):
-            # 控制面板
-            with ui.card().classes('w-full p-4'):
-                ui.label('🎮 控制面板').classes('text-h6 mb-2')
-                
-                # 统计信息
-                with ui.row().classes('gap-4 items-center mb-2'):
-                    app.data_points_label = ui.label('数据点数: 0')
-                    app.time_span_label = ui.label('时间跨度: 0.0 秒')
-                    ui.label(f'信号数量: 0').bind_text_from(
-                        app, 'selected_signals', 
-                        backward=lambda x: f'信号数量: {len(x)}'
-                    )
-                
-                # 控制按钮
-                with ui.row().classes('gap-2 items-center'):
-                    app.start_btn = ui.button('开始', icon='play_arrow', 
-                                              on_click=app.start_data_generation).props('color=green')
-                    app.stop_btn = ui.button('停止', icon='stop', 
-                                            on_click=app.stop_data_generation).props('color=red')
-                    app.stop_btn.disable()
-                    app.status_label = ui.label('状态: 准备就绪').style('font-weight: bold;')
-            
-            # Tab页
-            with ui.tabs().classes('w-full') as tabs:
-                tab_chart = ui.tab('图表显示', icon='timeline')
-                tab_info = ui.tab('系统信息', icon='info')
-            
-            # 给图表 tab 添加点击事件来触发初始化
-            def on_chart_tab_click():
-                print(f"[Tab Switch] 图表 tab 被点击")
-                # 延迟一点确保 tab 切换完成
-                ui.timer(0.2, lambda: (
-                    print(f"[Tab Switch] 触发图表初始化..."),
-                    app.chart_widget.ensure_initialized() if hasattr(app, 'chart_widget') and app.chart_widget else None
-                ), once=True)  # 减少延迟到0.2秒
-            
-            tab_chart.on('click', on_chart_tab_click)
-            
-            with ui.tab_panels(tabs, value=tab_info).classes('w-full flex-grow') as panels:
+        # Tab页内容
+        # 给图表 tab 添加点击事件来触发初始化
+        def on_chart_tab_click():
+            print(f"[Tab Switch] 图表 tab 被点击")
+            # 延迟一点确保 tab 切换完成
+            ui.timer(0.2, lambda: (
+                print(f"[Tab Switch] 触发图表初始化..."),
+                app.chart_widget.ensure_initialized() if hasattr(app, 'chart_widget') and app.chart_widget else None
+            ), once=True)  # 减少延迟到0.2秒
+        
+        tab_chart.on('click', on_chart_tab_click)
+        
+        with ui.tab_panels(tabs, value=tab_info).classes('w-full flex-grow') as panels:
                 
                 # Tab 2: 系统信息
                 with ui.tab_panel(tab_info):
@@ -479,7 +481,7 @@ def main_page():
                             
                             <h3 style="color: #1976d2; margin-top: 20px;">操作步骤</h3>
                             <ol>
-                                <li>在左侧边栏选择要监控的信号（至少选一个）</li>
+                                <li>点击左上角菜单按钮，在左侧抽屉中选择要监控的信号（至少选一个）</li>
                                 <li>点击"开始"按钮启动数据生成</li>
                                 <li>观察实时数据滚动显示（30秒窗口）</li>
                                 <li>点击"停止"按钮停止并查看全部历史数据</li>
@@ -522,7 +524,7 @@ def main_page():
                         
                         # 显示提示信息
                         with ui.card().classes('w-full').style('margin-top: 20px; background-color: #e3f2fd;'):
-                            ui.label('👈 请先在左侧选择信号').classes('text-h6').style(
+                            ui.label('👈 请点击左上角菜单按钮选择信号').classes('text-h6').style(
                                 'color: #1976d2; text-align: center; padding: 50px;'
                             )
     # 页脚
