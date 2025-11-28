@@ -76,12 +76,6 @@ def create_ui():
         ui.label('信号参数信息').classes('text-h6 mb-2')
         info_card = ui.html('初始化后显示信号参数...').classes('text-sm')
     
-    # 子图顺序控制面板
-    with ui.card().classes('w-full p-4').style('max-height: 300px; overflow-y: auto;'):
-        ui.label('子图顺序调节').classes('text-h6 mb-2')
-        subplot_order_container = ui.column().classes('w-full')
-        subplot_order_container.style('display: none;')  # 初始隐藏，初始化后显示
-    
     # 使用提示面板
     with ui.card().classes('w-full p-2').style('background-color: #e3f2fd;'):
         ui.html('''
@@ -92,13 +86,16 @@ def create_ui():
         </div>
         ''')
     
-    # 创建绘图区域（初始化临时图表以获取配置）
-    temp_plot = RealtimePlot(num_signals=4, window_seconds=60.0)
-    option = temp_plot.get_option()
-    
-    # 使用图表组件封装类创建图表
-    with ui.card().classes('w-full').style('overflow-y: scroll; max-height: 85vh; padding: 10px;'):
-        chart_widget = RealtimeChartWidget(option)
+    # 主体内容（图表区域）
+    with ui.column().classes('w-full').style('height: calc(100vh - 280px); overflow: hidden;'):
+        # 创建绘图区域（初始化临时图表以获取配置）
+        temp_plot = RealtimePlot(num_signals=4, window_seconds=60.0)
+        option = temp_plot.get_option()
+        
+        # 使用图表组件封装类创建图表
+        with ui.card().classes('w-full h-full').style('overflow-y: auto; padding: 10px;'):
+            # 注意：realtime_plot 将在 init_components 中设置
+            chart_widget = RealtimeChartWidget(option, realtime_plot=None)
     
     def init_components():
         """初始化绘图控件和数据生成器"""
@@ -159,68 +156,14 @@ def create_ui():
         # 更新枚举标签映射
         chart_widget.update_enum_labels(signal_types)
         
-        # 创建子图顺序控制UI
-        subplot_order_container.clear()
-        subplot_order_container.style('display: block;')
+        # 设置 realtime_plot 引用到 chart_widget
+        chart_widget.set_realtime_plot(realtime_plot)
         
-        def update_subplot_order_ui():
-            """更新子图顺序控制UI"""
-            subplot_order_container.clear()
-            current_order = realtime_plot.get_subplot_order()
-            
-            with subplot_order_container:
-                ui.html('<div style="font-size: 11px; color: #666; margin-bottom: 8px;">点击上下箭头调整子图位置</div>')
-                
-                for display_pos, signal_idx in enumerate(current_order):
-                    signal_name = signal_names_list[signal_idx] if signal_idx < len(signal_names_list) else f'Signal {signal_idx+1}'
-                    
-                    with ui.row().classes('items-center gap-2 mb-1').style('padding: 4px; border: 1px solid #e0e0e0; border-radius: 4px;'):
-                        # 显示位置编号
-                        ui.label(f'{display_pos + 1}.').classes('text-sm font-bold').style('min-width: 30px;')
-                        
-                        # 信号名称
-                        ui.label(signal_name).classes('text-sm').style('flex-grow: 1; min-width: 150px;')
-                        
-                        # 上移按钮
-                        up_btn = ui.button(icon='arrow_upward').props('size=sm color=primary flat')
-                        up_btn.disable() if display_pos == 0 else up_btn.enable()
-                        
-                        # 下移按钮
-                        down_btn = ui.button(icon='arrow_downward').props('size=sm color=primary flat')
-                        down_btn.disable() if display_pos == len(current_order) - 1 else down_btn.enable()
-                        
-                        # 绑定事件
-                        def make_move_handler(idx, direction):
-                            def handler():
-                                if direction == 'up':
-                                    realtime_plot.move_subplot_up(idx)
-                                else:
-                                    realtime_plot.move_subplot_down(idx)
-                                
-                                # 更新图表配置
-                                new_option = realtime_plot.get_option()
-                                chart_widget.update_chart_option(new_option, exclude_tooltip=True)
-                                
-                                # 如果正在运行，需要更新series数据
-                                if is_running and realtime_plot._data_buffer is not None:
-                                    series_data = [
-                                        {
-                                            'data': new_option['series'][i]['data'],
-                                            'showSymbol': new_option['series'][i]['showSymbol'],
-                                            'symbolSize': new_option['series'][i]['symbolSize']
-                                        }
-                                        for i in range(len(new_option['series']))
-                                    ]
-                                    chart_widget.update_series_data(series_data)
-                                
-                                # 刷新UI
-                                update_subplot_order_ui()
-                            return handler
-                        
-                        up_btn.on_click(make_move_handler(signal_idx, 'up'))
-                        down_btn.on_click(make_move_handler(signal_idx, 'down'))
+        # 更新子图顺序控制UI（在侧边栏中）
+        def get_is_running():
+            return is_running
         
-        update_subplot_order_ui()
+        chart_widget.update_subplot_order_ui(signal_names_list, chart_widget, get_is_running)
     
     def start_plotting():
         """启动实时绘图"""
