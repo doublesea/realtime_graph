@@ -75,7 +75,8 @@ class RealtimePlot:
                     max_label_length = max(max_label_length, len(label))
         
         # 根据最长标签动态计算左边距（每个字符约7像素，最少70像素）
-        grid_left = max(70, min(max_label_length * 7, 200))  # 限制最大200像素
+        # 增加最小左边距以适应较长的数值坐标
+        grid_left = max(85, min(max_label_length * 7, 200))  # 限制最大200像素
         title_left = 10  # 标题放在最左边
         
         # 在 ECharts 中，grids、x_axes、y_axes 数组的索引必须等于 gridIndex
@@ -464,23 +465,6 @@ class RealtimePlot:
                         self.option['yAxis'][i]['_actual_values'] = sorted_values  # 记录实际值
                         self.option['yAxis'][i]['min'] = 0  # 设置最小值
                         self.option['yAxis'][i]['max'] = len(categories) - 1 if len(categories) > 1 else 0  # 设置最大值
-                
-                # 根据数据点密度自动调整是否显示符号（点标记）
-                # 如果数据点超过150个，只显示线条，不显示点
-                # 这样可以保持图表清晰，避免太密集
-                data_point_count = len(data)
-                if data_point_count > 150:
-                    # 密集数据：只显示线条
-                    self.option['series'][i]['showSymbol'] = False
-                    self.option['series'][i]['symbolSize'] = 4
-                elif data_point_count > 50:
-                    # 中等密度：显示小点
-                    self.option['series'][i]['showSymbol'] = True
-                    self.option['series'][i]['symbolSize'] = 4
-                else:
-                    # 稀疏数据：显示正常大小的点
-                    self.option['series'][i]['showSymbol'] = True
-                    self.option['series'][i]['symbolSize'] = 6
         
         # 更新数据缩放范围（显示最近的数据）
         if len(timestamps) > 0:

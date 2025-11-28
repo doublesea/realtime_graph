@@ -1199,10 +1199,35 @@ class RealtimeChartWidget:
                     
                     // 更新每个series的data
                     if (option.series) {{
+                        // 获取 dataZoom 状态用于计算可见性
+                        let dataZoom = null;
+                        if (option.dataZoom) {{
+                            for (let z of option.dataZoom) {{
+                                if (z.type === 'inside') {{ dataZoom = z; break; }}
+                            }}
+                            if (!dataZoom && option.dataZoom.length > 0) dataZoom = option.dataZoom[0];
+                        }}
+                        const startPercent = dataZoom && dataZoom.start !== undefined ? dataZoom.start : 0;
+                        const endPercent = dataZoom && dataZoom.end !== undefined ? dataZoom.end : 100;
+
                         for (let i = 0; i < seriesData.length && i < option.series.length; i++) {{
                             option.series[i].data = seriesData[i].data;
-                            option.series[i].showSymbol = seriesData[i].showSymbol;
-                            option.series[i].symbolSize = seriesData[i].symbolSize;
+                            
+                            // 不直接使用 Python 传来的 showSymbol，而是根据当前 Zoom 状态重新计算
+                            // 解决 Python 更新覆盖前端 Zoom 状态导致的点闪烁问题
+                            const totalPoints = seriesData[i].data ? seriesData[i].data.length : 0;
+                            const visiblePointCount = totalPoints * (endPercent - startPercent) / 100;
+                            
+                            if (visiblePointCount > 150) {{
+                                option.series[i].showSymbol = false;
+                                option.series[i].symbolSize = 4;
+                            }} else if (visiblePointCount > 50) {{
+                                option.series[i].showSymbol = true;
+                                option.series[i].symbolSize = 4;
+                            }} else {{
+                                option.series[i].showSymbol = true;
+                                option.series[i].symbolSize = 6;
+                            }}
                         }}
                         
                         el.chart.setOption({{
@@ -1303,8 +1328,9 @@ class RealtimeChartWidget:
                 e.preventDefault();
                 e.stopPropagation();
                 menu.style.display = 'block';
-                menu.style.left = e.pageX + 'px';
-                menu.style.top = e.pageY + 'px';
+                // 使用 clientX/Y 配合 position: fixed，解决页面滚动时的位置偏移问题
+                menu.style.left = e.clientX + 'px';
+                menu.style.top = e.clientY + 'px';
                 menuVisible = true;
             }}
             
