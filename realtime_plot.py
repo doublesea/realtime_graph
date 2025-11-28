@@ -96,6 +96,10 @@ class RealtimePlot:
             title_offset = 22 if chart_height_per_signal >= 100 else 18
             grid_height = chart_height_per_signal - 25 if chart_height_per_signal >= 100 else chart_height_per_signal - 20
             
+            # Determine background color based on display position (zebra pattern)
+            # Alternating between #fafafa and #f2f2f2
+            bg_color = '#fafafa' if display_pos % 2 == 1 else '#f2f2f2'
+
             # 配置 grid（gridIndex = i，即数组索引）
             grids.append({
                 'left': grid_left,  # 统一的左边距，确保时间轴对齐
@@ -103,8 +107,9 @@ class RealtimePlot:
                 'top': top,  # 根据显示位置设置 top
                 'height': grid_height,  # 根据总高度动态调整
                 'containLabel': False,  # 禁用自动调整，严格使用left值
-                'show': False,  # 不显示边框，让指示线更连续
-                'backgroundColor': 'transparent'
+                'show': True,  # 显示以展示背景色
+                'borderWidth': 0,  # 不显示边框
+                'backgroundColor': bg_color
             })
             
             # 配置 x 轴（gridIndex = i，即数组索引）

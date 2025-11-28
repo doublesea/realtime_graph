@@ -1689,6 +1689,12 @@ class RealtimeChartWidget:
                                 const grid = {{...originalGrid[originalIdx]}};
                                 // 使用与 realtime_plot.py 相同的公式
                                 grid.top = chartSpacing + displayPos * (chartHeightPerSignal + chartSpacing) + baseTop;
+                                
+                                // Update background color for zebra pattern (consistent with RealtimePlot)
+                                grid.backgroundColor = (displayPos % 2 === 1) ? '#fafafa' : '#f2f2f2';
+                                grid.show = true;
+                                grid.borderWidth = 0;
+                                
                                 reorderedGrid[originalIdx] = grid;
                             }}
                         }}
