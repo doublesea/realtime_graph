@@ -11,8 +11,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from nicegui import ui
-from realtime_plot import RealtimePlot
-from chart_widget import RealtimeChartWidget
+from echart_widget import EChartWidget
 
 
 class DynamicChartApp:
@@ -48,8 +47,7 @@ class DynamicChartApp:
         self.data_point_count = 0  # 数据点计数器，用于生成时间间隔
         
         # UI组件引用
-        self.chart_widget = None
-        self.realtime_plot = None
+        self.echart_widget = None  # 使用 EChartWidget
         self.timer = None
         self.is_running = False
         
@@ -172,30 +170,16 @@ class DynamicChartApp:
     
     def recreate_chart(self, signal_types):
         """重新创建图表"""
-        # 重新创建RealtimePlot
-        self.realtime_plot = RealtimePlot(
-            num_signals=len(signal_types),
-            window_seconds=30.0,  # 30秒滚动窗口
-            signal_types=signal_types
-        )
-        
-        # 获取新的配置（series的data应该都是空的）
-        new_option = self.realtime_plot.get_option()
-        
-        # 更新现有图表（不销毁，避免JavaScript丢失）
-        self.chart_widget.update_chart_option(new_option, exclude_tooltip=True)
-        self.chart_widget.update_enum_labels(signal_types)
-        
-        # 确保显示空数据（清空旧的占位符数据）
-        empty_series_data = [
-            {
-                'data': [],
-                'showSymbol': False,
-                'symbolSize': 6
-            }
-            for _ in range(len(signal_types))
-        ]
-        self.chart_widget.update_series_data(empty_series_data)
+        if self.echart_widget is None:
+            # 首次创建
+            self.echart_widget = EChartWidget(
+                signal_types=signal_types,
+                window_seconds=30.0,  # 30秒滚动窗口
+                defer_init=True  # 延迟初始化，因为可能在tab中
+            )
+        else:
+            # 更新信号类型
+            self.echart_widget.update_signal_types(signal_types)
         
         # 重置数据
         self.data_history = None
@@ -246,8 +230,8 @@ class DynamicChartApp:
             self.data_history = pd.concat([self.data_history, new_data], ignore_index=True)
         
         # 更新实时显示（30秒滚动窗口）
-        self.realtime_plot.append_data(new_data)
-        self._update_chart_display()
+        if self.echart_widget:
+            self.echart_widget.append_data(new_data)
         
         # 更新统计信息
         self.update_stats()
@@ -283,24 +267,11 @@ class DynamicChartApp:
             return
         
         # 更新图表以显示所有数据（不限制30秒窗口）
-        self.realtime_plot.update_data(self.data_history)
-        self._update_chart_display()
+        if self.echart_widget:
+            self.echart_widget.update_data(self.data_history)
         
         # 更新统计信息
         self.update_stats(show_all=True)
-    
-    def _update_chart_display(self):
-        """更新图表显示"""
-        new_option = self.realtime_plot.get_option()
-        series_data = [
-            {
-                'data': new_option['series'][i]['data'],
-                'showSymbol': new_option['series'][i]['showSymbol'],
-                'symbolSize': new_option['series'][i]['symbolSize']
-            }
-            for i in range(len(new_option['series']))
-        ]
-        self.chart_widget.update_series_data(series_data)
     
     def update_stats(self, show_all=False):
         """更新统计信息"""
@@ -314,7 +285,11 @@ class DynamicChartApp:
                      self.data_history['timestamp'].min()).total_seconds()
         
         # 获取当前显示的数据
-        buffered_data = self.realtime_plot.get_buffered_data()
+        if self.echart_widget:
+            buffered_data = self.echart_widget.get_buffered_data()
+        else:
+            buffered_data = None
+        
         if buffered_data is not None and not buffered_data.empty:
             displayed_points = len(buffered_data)
             displayed_span = (buffered_data['timestamp'].max() - 
@@ -447,7 +422,7 @@ def main_page():
             # 延迟一点确保 tab 切换完成
             ui.timer(0.2, lambda: (
                 print(f"[Tab Switch] 触发图表初始化..."),
-                app.chart_widget.ensure_initialized() if hasattr(app, 'chart_widget') and app.chart_widget else None
+                app.echart_widget.ensure_initialized() if hasattr(app, 'echart_widget') and app.echart_widget else None
             ), once=True)  # 减少延迟到0.2秒
         
         tab_chart.on('click', on_chart_tab_click)
@@ -509,18 +484,16 @@ def main_page():
                     initial_signal_types = {
                         'placeholder_[0]': {'type': 'numeric'}
                     }
-                    app.realtime_plot = RealtimePlot(
-                        num_signals=1,
-                        window_seconds=30.0,
-                        signal_types=initial_signal_types
-                    )
-                    initial_option = app.realtime_plot.get_option()
                     
                     with app.chart_container:
-                        # 使用 defer_init=True 延迟 JavaScript 初始化
-                        app.chart_widget = RealtimeChartWidget(initial_option, defer_init=True)
-                        app.chart_widget.update_enum_labels(initial_signal_types)
-                        print(f"[Chart Widget] 创建完成 (ID: {app.chart_widget.instance_id}), 延迟初始化模式")
+                        # 使用 EChartWidget，延迟初始化
+                        # 图表元素会自动添加到当前的 UI 上下文中
+                        app.echart_widget = EChartWidget(
+                            signal_types=initial_signal_types,
+                            window_seconds=30.0,
+                            defer_init=True
+                        )
+                        print(f"[EChart Widget] 创建完成，延迟初始化模式")
                         
                         # 显示提示信息
                         with ui.card().classes('w-full').style('margin-top: 20px; background-color: #e3f2fd;'):
