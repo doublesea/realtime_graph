@@ -220,6 +220,7 @@ class RealtimePlot:
             if signal_config['type'] == 'enum':
                 # 枚举信号：使用阶梯图
                 series.append({
+                    'id': f'series_{original_idx}',  # 添加 ID 以确保 ECharts 在重新排序时正确跟踪
                     'type': 'line',
                     'xAxisIndex': original_idx,  # 使用原始索引
                     'yAxisIndex': original_idx,  # 使用原始索引
@@ -237,11 +238,13 @@ class RealtimePlot:
             else:
                 # 数值信号：使用普通折线图
                 series.append({
+                    'id': f'series_{original_idx}',  # 添加 ID 以确保 ECharts 在重新排序时正确跟踪
                     'type': 'line',
                     'xAxisIndex': original_idx,  # 使用原始索引
                     'yAxisIndex': original_idx,  # 使用原始索引
                     'data': [],
                     'name': series_name,
+                    'step': False,  # 显式禁用阶梯图，防止配置合并时的残留
                     'smooth': False,
                     'symbol': 'emptyCircle',  # 显示空心圆形数据点
                     'symbolSize': 6,  # 数据点大小
@@ -251,18 +254,11 @@ class RealtimePlot:
                     'animation': False  # 关闭动画以提高性能
                 })
         
-        # 注意：series 数组需要按照原始索引顺序排列（0, 1, 2, ...），
-        # 这样 _update_chart_data 才能正确更新数据
-        # 重新组织 series 数组，使其按照原始索引顺序
-        series_ordered = [None] * self.num_signals
-        for display_pos, original_idx in enumerate(self.subplot_order):
-            series_ordered[original_idx] = series[display_pos]
-        
         return {
             'grid': grids,  # 按原始索引顺序，但 top 位置根据 subplot_order 设置
             'xAxis': x_axes,  # 按原始索引顺序，gridIndex = 数组索引
             'yAxis': y_axes,  # 按原始索引顺序，gridIndex = 数组索引
-            'series': series_ordered,  # 按原始索引顺序排列
+            'series': series,  # 按 subplot_order 顺序排列
             'title': titles,  # 按 subplot_order 顺序排列
             # 设置图表的总高度
             'height': total_height,
@@ -329,7 +325,8 @@ class RealtimePlot:
                     }
                 }
             ],
-            'animation': False  # 关闭全局动画
+            'animation': False,  # 关闭全局动画
+            'animationDurationUpdate': 0  # 关闭更新动画，防止子图重排时出现过渡效果
         }
     
     
@@ -387,7 +384,7 @@ class RealtimePlot:
         signal_types_list = list(self.signal_types.items())
         
         # 更新每个信号的数据
-        for i in range(self.num_signals):
+        for series_idx, i in enumerate(self.subplot_order):
             # 使用列表索引获取信号名和配置
             if i < len(signal_types_list):
                 signal_name, signal_config = signal_types_list[i]
@@ -421,7 +418,7 @@ class RealtimePlot:
                 else:
                     data = valid_data
                 
-                self.option['series'][i]['data'] = data
+                self.option['series'][series_idx]['data'] = data
                 
                 # 如果是枚举类型，动态更新Y轴类别（只显示实际出现的值）
                 if signal_config['type'] == 'enum' and len(data) > 0:
@@ -458,13 +455,28 @@ class RealtimePlot:
                                     remapped_data.append([ts, value_to_index[val_int]])
                         
                         # 更新series数据为重新映射后的数据
-                        self.option['series'][i]['data'] = remapped_data
+                        self.option['series'][series_idx]['data'] = remapped_data
                         
                         # 更新Y轴配置
                         self.option['yAxis'][i]['data'] = categories
                         self.option['yAxis'][i]['_actual_values'] = sorted_values  # 记录实际值
                         self.option['yAxis'][i]['min'] = 0  # 设置最小值
                         self.option['yAxis'][i]['max'] = len(categories) - 1 if len(categories) > 1 else 0  # 设置最大值
+
+                # 动态调整显示符号（数据密度检查）
+                # 这里的逻辑与前端保持一致，确保在后端更新配置时也应用相同的规则，防止重新排序时出现“闪烁”
+                current_data = self.option['series'][series_idx]['data']
+                visible_points = len(current_data) if current_data else 0
+                
+                if visible_points > 150:
+                    self.option['series'][series_idx]['showSymbol'] = False
+                    self.option['series'][series_idx]['symbolSize'] = 4
+                elif visible_points > 50:
+                    self.option['series'][series_idx]['showSymbol'] = True
+                    self.option['series'][series_idx]['symbolSize'] = 4
+                else:
+                    self.option['series'][series_idx]['showSymbol'] = True
+                    self.option['series'][series_idx]['symbolSize'] = 6
         
         # 更新数据缩放范围（显示最近的数据）
         if len(timestamps) > 0:
