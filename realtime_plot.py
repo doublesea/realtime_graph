@@ -6,6 +6,12 @@
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional
+import logging
+
+# Configure logger
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
 
 
 class RealtimePlot:
@@ -77,6 +83,10 @@ class RealtimePlot:
         # 根据最长标签动态计算左边距（每个字符约7像素，最少70像素）
         # 增加最小左边距以适应较长的数值坐标
         grid_left = max(85, min(max_label_length * 7, 200))  # 限制最大200像素
+        
+        # Log grid_left calculation for debugging
+        logger.info(f"Calculated grid_left: {grid_left}px based on max_label_length: {max_label_length}")
+        
         title_left = 10  # 标题放在最左边
         
         # 在 ECharts 中，grids、x_axes、y_axes 数组的索引必须等于 gridIndex
@@ -178,7 +188,16 @@ class RealtimePlot:
                     'scale': True,  # 自动缩放以适应数据
                     'axisLabel': {
                         'show': True,  # 显式启用y轴标签显示
-                        'fontSize': 9
+                        'fontSize': 9,
+                        'color': '#333'  # Ensure color is visible
+                    },
+                    'axisTick': {
+                        'show': True,    # Explicitly show ticks
+                        'lineStyle': {'color': '#333'}
+                    },
+                    'axisLine': {
+                        'show': True,    # Explicitly show axis line
+                        'lineStyle': {'color': '#333'}
                     },
                     'splitNumber': 3  # 减少刻度线数量，节省空间
                 })
