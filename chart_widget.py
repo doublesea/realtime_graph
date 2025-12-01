@@ -97,6 +97,7 @@ class RealtimeChartWidget:
                     enumLabelsMap: {{}},
                     _currentOption: null,
                     _initialized: false,
+                    _subplotOrder: null,
                     
                     tooltipFormatter: function(params) {{
                         {tooltip_code}
@@ -104,6 +105,10 @@ class RealtimeChartWidget:
                     
                     updateEnumLabels: function(newLabels) {{
                         window.chartInstances[INSTANCE_ID].enumLabelsMap = newLabels;
+                    }},
+                    
+                    updateSubplotOrder: function(newOrder) {{
+                        window.chartInstances[INSTANCE_ID]._subplotOrder = newOrder;
                     }}
                 }};
                 
@@ -174,20 +179,25 @@ class RealtimeChartWidget:
                 
                 if (!window.chartInstances[INSTANCE_ID]) {{
                     console.warn('Namespace not found for instance', INSTANCE_ID, ', creating it now...');
-                    window.chartInstances[INSTANCE_ID] = {{
-                        chartId: CHART_ID,
-                        enumLabelsMap: {{}},
-                        _currentOption: null,
-                        _initialized: false,
-                        
-                        tooltipFormatter: function(params) {{
-                            {self._get_tooltip_formatter_code()}
-                        }},
-                        
-                        updateEnumLabels: function(newLabels) {{
-                            window.chartInstances[INSTANCE_ID].enumLabelsMap = newLabels;
-                        }}
-                    }};
+                        window.chartInstances[INSTANCE_ID] = {{
+                            chartId: CHART_ID,
+                            enumLabelsMap: {{}},
+                            _currentOption: null,
+                            _initialized: false,
+                            _subplotOrder: null,
+                            
+                            tooltipFormatter: function(params) {{
+                                {self._get_tooltip_formatter_code()}
+                            }},
+                            
+                            updateEnumLabels: function(newLabels) {{
+                                window.chartInstances[INSTANCE_ID].enumLabelsMap = newLabels;
+                            }},
+                            
+                            updateSubplotOrder: function(newOrder) {{
+                                window.chartInstances[INSTANCE_ID]._subplotOrder = newOrder;
+                            }}
+                        }};
                     console.log('Namespace created on-the-fly for instance', INSTANCE_ID);
                 }}
                 
@@ -537,9 +547,31 @@ class RealtimeChartWidget:
                         }
                     }
                     
-                    // 按信号编号排序
+                    // 按子图显示顺序排序（如果存在 subplot_order，否则按原始索引排序）
                     let signals = Array.from(signalsMap.values());
-                    signals.sort((a, b) => a.index - b.index);
+                    const subplotOrder = window.chartInstances[INSTANCE_ID]._subplotOrder;
+                    if (subplotOrder && Array.isArray(subplotOrder)) {
+                        // 按照 subplot_order 的顺序排序
+                        // subplotOrder[i] 是显示在第 i 位的原始索引
+                        // 我们需要找到每个信号的原始索引在 subplotOrder 中的位置
+                        signals.sort((a, b) => {
+                            // a.index 和 b.index 是 signalIndex (seriesIndex + 1)，需要转换为原始索引 (seriesIndex)
+                            const aOriginalIdx = a.index - 1;
+                            const bOriginalIdx = b.index - 1;
+                            const aDisplayPos = subplotOrder.indexOf(aOriginalIdx);
+                            const bDisplayPos = subplotOrder.indexOf(bOriginalIdx);
+                            // 如果找不到位置，使用原始索引排序
+                            if (aDisplayPos === -1 && bDisplayPos === -1) {
+                                return a.index - b.index;
+                            }
+                            if (aDisplayPos === -1) return 1;  // 找不到的排在后面
+                            if (bDisplayPos === -1) return -1;
+                            return aDisplayPos - bDisplayPos;
+                        });
+                    } else {
+                        // 如果没有 subplot_order，按原始索引排序
+                        signals.sort((a, b) => a.index - b.index);
+                    }
                     
                     // 分栏显示
                     const maxPerColumn = 12;
@@ -606,6 +638,7 @@ class RealtimeChartWidget:
                 enumLabelsMap: {{}},
                 _currentOption: null,  // 存储当前option，供tooltip使用
                 _initialized: false,  // 初始化状态标记
+                _subplotOrder: null,  // 存储子图顺序，供tooltip使用
                 
                 // Tooltip formatter 函数
                 tooltipFormatter: function(params) {{
@@ -614,6 +647,10 @@ class RealtimeChartWidget:
                 
                 updateEnumLabels: function(newLabels) {{
                     window.chartInstances[INSTANCE_ID].enumLabelsMap = newLabels;
+                }},
+                
+                updateSubplotOrder: function(newOrder) {{
+                    window.chartInstances[INSTANCE_ID]._subplotOrder = newOrder;
                 }}
             }};
         
@@ -1029,6 +1066,10 @@ class RealtimeChartWidget:
             # 事件循环未准备好，延迟执行
             ui.timer(0.1, execute_update, once=True)
         
+        # 自动更新 subplot_order（如果 realtime_plot 存在）
+        if self.realtime_plot:
+            self.update_subplot_order()
+        
         # 自动更新侧边栏：更新信号名称列表（从传入的 signal_types 获取）
         signal_names_list = list(signal_types.keys())
         # 更新信号名称列表（即使 realtime_plot 还没有设置，也先保存信号名称）
@@ -1051,6 +1092,35 @@ class RealtimeChartWidget:
         elif hasattr(self, 'subplot_order_container'):
             # 即使没有 realtime_plot，也更新 UI（使用已保存的 signal_names_list）
             self.update_subplot_order_ui()
+    
+    def update_subplot_order(self):
+        """
+        更新 JavaScript 中的 subplot_order
+        """
+        if not self.realtime_plot:
+            return
+        
+        subplot_order = self.realtime_plot.get_subplot_order()
+        order_json = json.dumps(subplot_order)
+        
+        update_script = f'''
+            if (window.chartInstances && window.chartInstances[{self.instance_id}]) {{
+                window.chartInstances[{self.instance_id}].updateSubplotOrder({order_json});
+            }}
+        '''
+        
+        def execute_update():
+            """执行更新脚本"""
+            try:
+                ui.run_javascript(update_script)
+            except (AssertionError, RuntimeError):
+                # 如果事件循环未准备好，延迟执行
+                ui.timer(0.1, lambda: ui.run_javascript(update_script), once=True)
+        
+        try:
+            execute_update()
+        except (AssertionError, RuntimeError):
+            ui.timer(0.1, execute_update, once=True)
     
     def update_chart_option(self, new_option: Dict[str, Any], exclude_tooltip: bool = True, realtime_plot=None):
         """
@@ -1095,6 +1165,80 @@ class RealtimeChartWidget:
                     console.log('=== Updating Chart Config ===');
                     console.log('New config has', newConfig.series ? newConfig.series.length : 0, 'series');
                     console.log('New config has', newConfig.grid ? newConfig.grid.length : 0, 'grids');
+                    
+                    // 保存当前的 series 数据，避免在更新配置时丢失
+                    const currentOption = el.chart.getOption();
+                    const currentSeriesData = [];
+                    let hasAnyData = false;
+                    if (currentOption.series) {{
+                        for (let i = 0; i < currentOption.series.length; i++) {{
+                            if (currentOption.series[i]) {{
+                                const data = currentOption.series[i].data || [];
+                                // 保存数据（即使为空也要保存，用于后续判断）
+                                currentSeriesData[i] = {{
+                                    data: data,
+                                    showSymbol: currentOption.series[i].showSymbol,
+                                    symbolSize: currentOption.series[i].symbolSize
+                                }};
+                                if (data.length > 0) {{
+                                    hasAnyData = true;
+                                }}
+                            }}
+                        }}
+                    }}
+                    console.log('Saved current series data:', hasAnyData ? 'has data' : 'no data', 
+                                'series count:', currentSeriesData.length);
+                    
+                    // 合并 series 数据：优先使用 newConfig 中的数据，如果为空则使用当前保存的数据
+                    // series 数组按原始索引顺序排列，所以可以直接按索引对应
+                    let preservedCount = 0;
+                    if (newConfig.series && newConfig.series.length > 0) {{
+                        // 确保数组长度匹配
+                        const maxLength = Math.max(newConfig.series.length, currentSeriesData.length);
+                        for (let i = 0; i < maxLength; i++) {{
+                            if (i < newConfig.series.length && newConfig.series[i]) {{
+                                // 检查新配置中的数据是否有效
+                                const newData = newConfig.series[i].data;
+                                const hasNewData = newData && Array.isArray(newData) && newData.length > 0;
+                                
+                                // 检查当前保存的数据是否有效
+                                const currentData = currentSeriesData[i] && currentSeriesData[i].data;
+                                const hasCurrentData = currentData && Array.isArray(currentData) && currentData.length > 0;
+                                
+                                if (!hasNewData && hasCurrentData) {{
+                                    // 新配置中没有数据，使用当前保存的数据
+                                    newConfig.series[i].data = currentData.slice(); // 使用 slice() 创建副本
+                                    preservedCount++;
+                                    // 保留当前的显示设置（特别是 showSymbol，避免在调整子图顺序时出现点）
+                                    if (currentSeriesData[i].showSymbol !== undefined) {{
+                                        newConfig.series[i].showSymbol = currentSeriesData[i].showSymbol;
+                                    }}
+                                    if (currentSeriesData[i].symbolSize !== undefined) {{
+                                        newConfig.series[i].symbolSize = currentSeriesData[i].symbolSize;
+                                    }}
+                                }} else if (hasNewData && hasCurrentData) {{
+                                    // 两者都有数据，使用新数据，但保留当前的显示设置（避免闪烁和出现点）
+                                    // 关键：如果当前是隐藏点的状态（只显示线），必须保持这个状态
+                                    if (currentSeriesData[i].showSymbol !== undefined) {{
+                                        newConfig.series[i].showSymbol = currentSeriesData[i].showSymbol;
+                                    }}
+                                    if (currentSeriesData[i].symbolSize !== undefined) {{
+                                        newConfig.series[i].symbolSize = currentSeriesData[i].symbolSize;
+                                    }}
+                                }} else if (hasNewData) {{
+                                    // 只有新数据，但如果当前有显示设置，也应该保留（避免从有数据变成无数据时出现点）
+                                    if (currentSeriesData[i] && currentSeriesData[i].showSymbol !== undefined) {{
+                                        newConfig.series[i].showSymbol = currentSeriesData[i].showSymbol;
+                                    }}
+                                    if (currentSeriesData[i] && currentSeriesData[i].symbolSize !== undefined) {{
+                                        newConfig.series[i].symbolSize = currentSeriesData[i].symbolSize;
+                                    }}
+                                }}
+                                // 如果两者都没有数据，保持空数组
+                            }}
+                        }}
+                    }}
+                    console.log('Preserved', preservedCount, 'series data from current chart');
                     
                     // 第一步：完全替换配置（notMerge=true）
                     el.chart.setOption(newConfig, true, false);
@@ -1215,12 +1359,21 @@ class RealtimeChartWidget:
                         for (let i = 0; i < seriesData.length && i < option.series.length; i++) {{
                             option.series[i].data = seriesData[i].data;
                             
+                            // 保存当前的 showSymbol 状态，如果当前是 false（只显示线），保持这个状态
+                            // 这样可以避免在调整子图顺序时，临时出现点的情况
+                            const currentShowSymbol = option.series[i].showSymbol;
+                            const wasHidingSymbols = currentShowSymbol === false;
+                            
                             // 不直接使用 Python 传来的 showSymbol，而是根据当前 Zoom 状态重新计算
-                            // 解决 Python 更新覆盖前端 Zoom 状态导致的点闪烁问题
+                            // 但如果当前是隐藏点的状态（只显示线），保持这个状态
                             const totalPoints = seriesData[i].data ? seriesData[i].data.length : 0;
                             const visiblePointCount = totalPoints * (endPercent - startPercent) / 100;
                             
-                            if (visiblePointCount > 150) {{
+                            if (wasHidingSymbols && visiblePointCount > 150) {{
+                                // 如果当前是隐藏点的状态，且数据密度仍然很大，保持隐藏点的状态
+                                option.series[i].showSymbol = false;
+                                option.series[i].symbolSize = 4;
+                            }} else if (visiblePointCount > 150) {{
                                 option.series[i].showSymbol = false;
                                 option.series[i].symbolSize = 4;
                             }} else if (visiblePointCount > 50) {{
@@ -1528,21 +1681,17 @@ class RealtimeChartWidget:
             # 更新图表配置
             new_option = self.realtime_plot.get_option()
             if chart_widget_ref:
+                # 更新图表配置（update_chart_option 会保留当前数据和显示设置，避免线变成点）
+                # 注意：update_chart_option 已经会保留 showSymbol 状态，所以不需要再调用 update_series_data
+                # 这样可以避免在调整子图顺序时，临时出现点的情况
                 chart_widget_ref.update_chart_option(new_option, exclude_tooltip=True)
-            
-            # 如果正在运行，需要更新series数据
-            if (is_running_ref and is_running_ref() and 
-                self.realtime_plot._data_buffer is not None):
-                series_data = [
-                    {
-                        'data': new_option['series'][i]['data'],
-                        'showSymbol': new_option['series'][i]['showSymbol'],
-                        'symbolSize': new_option['series'][i]['symbolSize']
-                    }
-                    for i in range(len(new_option['series']))
-                ]
-                if chart_widget_ref:
-                    chart_widget_ref.update_series_data(series_data)
+                # 更新 JavaScript 中的 subplot_order
+                chart_widget_ref.update_subplot_order()
+                
+                # 注意：不再调用 update_series_data，因为：
+                # 1. update_chart_option 已经更新了数据和显示设置
+                # 2. update_series_data 会重新计算 showSymbol，可能导致临时出现点
+                # 3. 如果数据正在更新，后续的数据更新会自动调用 update_series_data
         else:
             # 如果没有 realtime_plot，使用内部维护的顺序，并通过 JavaScript 直接更新图表
             if self._internal_subplot_order is None:
@@ -1737,6 +1886,8 @@ class RealtimeChartWidget:
     def set_realtime_plot(self, realtime_plot):
         """设置 RealtimePlot 实例"""
         self.realtime_plot = realtime_plot
+        # 更新 JavaScript 中的 subplot_order
+        self.update_subplot_order()
         # 自动更新侧边栏内容（如果侧边栏已创建）
         if hasattr(self, 'subplot_order_container'):
             # 清除之前保存的信号名称列表，让 update_subplot_order_ui 自动从 realtime_plot 获取

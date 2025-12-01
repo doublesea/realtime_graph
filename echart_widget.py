@@ -43,6 +43,8 @@ class EChartWidget:
         self.chart_widget = RealtimeChartWidget(self.option, defer_init=defer_init, realtime_plot=self.realtime_plot)
         
         self.chart_widget.update_enum_labels(signal_types)
+        # 初始化 subplot_order
+        self.chart_widget.update_subplot_order()
     
     def get_option(self):
         """获取当前图表配置"""
@@ -114,6 +116,8 @@ class EChartWidget:
         new_option = self.realtime_plot.get_option()
         self.chart_widget.update_chart_option(new_option, exclude_tooltip=True)
         self.chart_widget.update_enum_labels(self.signal_types)
+        # 更新 subplot_order
+        self.chart_widget.update_subplot_order()
         
         # 更新图表显示
         self._update_chart_display()
@@ -152,6 +156,8 @@ class EChartWidget:
         self.chart_widget.update_chart_option(new_option, exclude_tooltip=True)
         self.chart_widget.update_enum_labels(signal_types)
         self.chart_widget.set_realtime_plot(self.realtime_plot)
+        # 更新 subplot_order
+        self.chart_widget.update_subplot_order()
         
         # 确保显示空数据
         empty_series_data = [
