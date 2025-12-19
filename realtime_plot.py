@@ -71,8 +71,10 @@ class RealtimePlot:
                 signal_config = {'type': 'numeric'}
             if signal_config['type'] == 'enum':
                 enum_labels = signal_config.get('enum_labels', {})
-                for label in enum_labels.values():
-                    max_label_length = max(max_label_length, len(label))
+                for val, label in enum_labels.items():
+                    # 标签长度包含 "值: 标签"
+                    label_len = len(str(val)) + 2 + len(label)
+                    max_label_length = max(max_label_length, label_len)
         
         # 根据最长标签动态计算左边距（每个字符约7像素，最少70像素）
         # 增加最小左边距以适应较长的数值坐标
@@ -152,7 +154,11 @@ class RealtimePlot:
                 enum_values = sorted(enum_labels.keys())
                 
                 # 构建类别数组（按值的顺序）
-                categories = [enum_labels[v] for v in enum_values]
+                # 格式化为 "值: 标签" 以在 Tooltip 和轴上显示
+                categories = [f"{v}: {enum_labels[v]}" for v in enum_values]
+                
+                # 创建值到索引的映射
+                value_to_index = {v: idx for idx, v in enumerate(enum_values)}
                 
                 y_axes.append({
                     'type': 'category',  # 使用类别轴
@@ -167,7 +173,8 @@ class RealtimePlot:
                         'ellipsis': '...'  # 截断时显示省略号
                     },
                     '_enum_labels': enum_labels,  # 存储枚举标签，供后续使用
-                    '_enum_values': enum_values  # 存储枚举值列表
+                    '_enum_values': enum_values,  # 存储枚举值列表
+                    '_value_to_index': value_to_index  # 存储值到索引的映射
                 })
             else:
                 # 数值信号的 y 轴：自动缩放
@@ -420,48 +427,35 @@ class RealtimePlot:
                 
                 self.option['series'][series_idx]['data'] = data
                 
-                # 如果是枚举类型，动态更新Y轴类别（只显示实际出现的值）
+                # 如果是枚举类型，使用固定的映射（不再动态更新轴）
                 if signal_config['type'] == 'enum' and len(data) > 0:
                     enum_labels = signal_config.get('enum_labels', {})
                     
-                    # 收集实际出现的枚举值（跳过 null 值）
-                    actual_values = set()
-                    for _, val in data:
-                        if val is not None:
+                    # 获取或计算值到索引的映射
+                    y_axis_config = self.option['yAxis'][i]
+                    if '_value_to_index' in y_axis_config:
+                        value_to_index = y_axis_config['_value_to_index']
+                    else:
+                        # Fallback computation
+                        sorted_keys = sorted(enum_labels.keys())
+                        value_to_index = {v: idx for idx, v in enumerate(sorted_keys)}
+                    
+                    # 重新映射数据到固定的索引
+                    remapped_data = []
+                    for ts, val in data:
+                        # 保留 null 值，用于断开连线
+                        if val is None:
+                            remapped_data.append([ts, None])
+                        else:
                             val_int = int(round(val))
-                            if val_int in enum_labels:
-                                actual_values.add(val_int)
+                            if val_int in value_to_index:
+                                # 使用固定的索引
+                                remapped_data.append([ts, value_to_index[val_int]])
                     
-                    # 按值排序
-                    sorted_values = sorted(actual_values)
+                    # 更新series数据
+                    self.option['series'][series_idx]['data'] = remapped_data
                     
-                    # 构建实际显示的类别列表
-                    if sorted_values:
-                        categories = [enum_labels[v] for v in sorted_values]
-                        
-                        # 创建值到索引的映射
-                        value_to_index = {v: idx for idx, v in enumerate(sorted_values)}
-                        
-                        # 重新映射数据：将原始枚举值转换为新的类别索引
-                        remapped_data = []
-                        for ts, val in data:
-                            # 保留 null 值，用于断开连线
-                            if val is None:
-                                remapped_data.append([ts, None])
-                            else:
-                                val_int = int(round(val))
-                                if val_int in value_to_index:
-                                    # 使用新的索引
-                                    remapped_data.append([ts, value_to_index[val_int]])
-                        
-                        # 更新series数据为重新映射后的数据
-                        self.option['series'][series_idx]['data'] = remapped_data
-                        
-                        # 更新Y轴配置
-                        self.option['yAxis'][i]['data'] = categories
-                        self.option['yAxis'][i]['_actual_values'] = sorted_values  # 记录实际值
-                        self.option['yAxis'][i]['min'] = 0  # 设置最小值
-                        self.option['yAxis'][i]['max'] = len(categories) - 1 if len(categories) > 1 else 0  # 设置最大值
+                    # 不再更新Y轴配置，保持全集显示，避免错位和闪烁
 
                 # 动态调整显示符号（数据密度检查）
                 # 这里的逻辑与前端保持一致，确保在后端更新配置时也应用相同的规则，防止重新排序时出现“闪烁”

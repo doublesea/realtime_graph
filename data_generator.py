@@ -48,6 +48,12 @@ class DataGenerator:
                 0: '低',
                 1: '中',
                 2: '高'
+            },
+            'status_test': {
+                0: '初始 (INIT)',
+                1: '就绪 (READY)',
+                2: '运行 (ACTIVE)',
+                3: '停止 (STOPPED)'
             }
         }
         
@@ -75,15 +81,18 @@ class DataGenerator:
             if is_enum:
                 # 枚举信号参数
                 # 为不同枚举信号分配不同的枚举定义
-                if i % 3 == 0:
+                if i % 4 == 0:
                     enum_type = 'default'
                     enum_values = [0, 1, 2, 3]
-                elif i % 3 == 1:
+                elif i % 4 == 1:
                     enum_type = 'boolean'
                     enum_values = [0, 1]
-                else:
+                elif i % 4 == 2:
                     enum_type = 'level'
                     enum_values = [0, 1, 2]
+                else:
+                    enum_type = 'status_test'
+                    enum_values = [1, 2, 3, 0]
                 
                 self.signal_params.append({
                     'type': 'enum',
