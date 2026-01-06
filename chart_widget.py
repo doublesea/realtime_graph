@@ -342,16 +342,42 @@ class RealtimeChartWidget:
                                 chartDom.addEventListener('mousemove', function(e) {{
                                     const rect = chartDom.getBoundingClientRect();
                                     const x = e.clientX - rect.left;
+                                    const y = e.clientY - rect.top;
                                     const left = window.chartInstances[INSTANCE_ID]._gridLeft || 0;
                                     const right = window.chartInstances[INSTANCE_ID]._gridRight || rect.width;
+                                    
                                     if (x >= left && x <= right) {{
                                         customLine.style.left = x + 'px';
                                         customLine.style.display = 'block';
+                                        
+                                        // 计算当前鼠标悬停的子图索引
+                                        try {{
+                                            const opt = el.chart.getOption();
+                                            if (opt && opt.grid) {{
+                                                const chartHeight = el.chart.getHeight();
+                                                let hoveredIndex = -1;
+                                                for (let i = 0; i < opt.grid.length; i++) {{
+                                                    const g = opt.grid[i];
+                                                    const top = typeof g.top === 'string' && g.top.includes('%') ? (parseFloat(g.top)/100)*chartHeight : parseFloat(g.top);
+                                                    const h = typeof g.height === 'string' && g.height.includes('%') ? (parseFloat(g.height)/100)*chartHeight : parseFloat(g.height);
+                                                    
+                                                    if (y >= top && y <= top + h) {{
+                                                        hoveredIndex = i;
+                                                        break;
+                                                    }}
+                                                }}
+                                                window.chartInstances[INSTANCE_ID]._hoveredGridIndex = hoveredIndex;
+                                            }}
+                                        }} catch(err) {{}}
                                     }} else {{
                                         customLine.style.display = 'none';
+                                        window.chartInstances[INSTANCE_ID]._hoveredGridIndex = -1;
                                     }}
                                 }});
-                                chartDom.addEventListener('mouseleave', function() {{ customLine.style.display = 'none'; }});
+                                chartDom.addEventListener('mouseleave', function() {{ 
+                                    customLine.style.display = 'none'; 
+                                    window.chartInstances[INSTANCE_ID]._hoveredGridIndex = -1;
+                                }});
                             }}
                             
                             window.chartInstances[INSTANCE_ID]._initialized = true;
@@ -397,6 +423,9 @@ class RealtimeChartWidget:
                     
                     let html = '<div style="font-weight:bold;margin-bottom:8px;border-bottom:1px solid #666;padding-bottom:5px;">' + time + '</div>';
                     
+                    // 获取当前鼠标悬停的子图索引
+                    const hoveredGridIndex = window.chartInstances[INSTANCE_ID]._hoveredGridIndex;
+                    
                     // 收集信号数据（去重）
                     const signalsMap = new Map();
                     const enumMap = window.chartInstances[INSTANCE_ID].enumLabelsMap;
@@ -412,11 +441,12 @@ class RealtimeChartWidget:
                             // 枚举类型显示文本标签，数值类型显示数字
                             let displayValue;
                             const enumLabels = enumMap[signalIndex.toString()];
+                            const option = window.chartInstances[INSTANCE_ID]._currentOption;
+                            
                             if (enumLabels) {
                                 const yAxisIndex = p.seriesIndex;
                                 let categoryLabel = null;
                                 try {
-                                    const option = window.chartInstances[INSTANCE_ID]._currentOption;
                                     if (option && option.yAxis && option.yAxis[yAxisIndex]) {
                                         const categories = option.yAxis[yAxisIndex].data;
                                         const idx = Math.round(v);
@@ -436,12 +466,23 @@ class RealtimeChartWidget:
                                 displayValue = v.toFixed(3);
                             }
                             
+                            // 判断该信号是否属于当前鼠标悬停的子图
+                            // 获取该 series 绑定的 xAxisIndex (即 original_idx)
+                            let isCurrentSubplot = false;
+                            try {
+                                if (option && option.series && option.series[p.seriesIndex]) {
+                                    const seriesXAxisIndex = option.series[p.seriesIndex].xAxisIndex;
+                                    isCurrentSubplot = (hoveredGridIndex !== -1 && hoveredGridIndex !== undefined && seriesXAxisIndex === hoveredGridIndex);
+                                }
+                            } catch (e) {}
+                            
                             signalsMap.set(signalIndex, {
                                 name: p.seriesName,
                                 value: v,
                                 displayValue: displayValue,
                                 color: p.color,
-                                index: signalIndex
+                                index: signalIndex,
+                                isCurrentSubplot: isCurrentSubplot
                             });
                         }
                     }
@@ -462,10 +503,12 @@ class RealtimeChartWidget:
                             const end = Math.min(start + maxPerColumn, signals.length);
                             for (let i = start; i < end; i++) {
                                 const sig = signals[i];
+                                const nameStyle = sig.isCurrentSubplot ? 'font-weight:bold;' : '';
+                                const valueStyle = sig.isCurrentSubplot ? 'font-weight:bold;' : '';
                                 html += '<div style="margin:3px 0;display:flex;align-items:center;">';
                                 html += '<span style="width:8px;height:8px;background-color:' + sig.color + ';border-radius:50%;margin-right:8px;flex-shrink:0;"></span>';
-                                html += '<span style="min-width:120px;font-size:11px;flex-shrink:0;">' + sig.name + '</span>';
-                                html += '<span style="font-weight:bold;font-size:11px;margin-left:8px;text-align:right;flex-grow:1;">' + sig.displayValue + '</span>';
+                                html += '<span style="min-width:120px;font-size:11px;flex-shrink:0;' + nameStyle + '">' + sig.name + '</span>';
+                                html += '<span style="font-size:11px;margin-left:8px;text-align:right;flex-grow:1;' + valueStyle + '">' + sig.displayValue + '</span>';
                                 html += '</div>';
                             }
                             html += '</div>';
@@ -474,10 +517,12 @@ class RealtimeChartWidget:
                     } else {
                         for (let i = 0; i < signals.length; i++) {
                             const sig = signals[i];
+                            const nameStyle = sig.isCurrentSubplot ? 'font-weight:bold;' : '';
+                            const valueStyle = sig.isCurrentSubplot ? 'font-weight:bold;' : '';
                             html += '<div style="margin:4px 0;display:flex;align-items:center;min-width:250px;">';
                             html += '<span style="width:10px;height:10px;background-color:' + sig.color + ';border-radius:50%;margin-right:10px;flex-shrink:0;"></span>';
-                            html += '<span style="min-width:140px;font-size:12px;flex-shrink:0;">' + sig.name + '</span>';
-                            html += '<span style="font-weight:bold;font-size:12px;margin-left:10px;text-align:right;flex-grow:1;">' + sig.displayValue + '</span>';
+                            html += '<span style="min-width:140px;font-size:12px;flex-shrink:0;' + nameStyle + '">' + sig.name + '</span>';
+                            html += '<span style="font-size:12px;margin-left:10px;text-align:right;flex-grow:1;' + valueStyle + '">' + sig.displayValue + '</span>';
                             html += '</div>';
                         }
                     }
@@ -646,16 +691,41 @@ class RealtimeChartWidget:
                         chartDom.addEventListener('mousemove', function(e) {{
                             const rect = chartDom.getBoundingClientRect();
                             const x = e.clientX - rect.left;
+                            const y = e.clientY - rect.top;
                             const left = window.chartInstances[INSTANCE_ID]._gridLeft || 0;
                             const right = window.chartInstances[INSTANCE_ID]._gridRight || rect.width;
                             if (x >= left && x <= right) {{
                                 customLine.style.left = x + 'px';
                                 customLine.style.display = 'block';
+                                
+                                // 计算当前鼠标悬停的子图索引
+                                try {{
+                                    const opt = el.chart.getOption();
+                                    if (opt && opt.grid) {{
+                                        const chartHeight = el.chart.getHeight();
+                                        let hoveredIndex = -1;
+                                        for (let i = 0; i < opt.grid.length; i++) {{
+                                            const g = opt.grid[i];
+                                            const top = typeof g.top === 'string' && g.top.includes('%') ? (parseFloat(g.top)/100)*chartHeight : parseFloat(g.top);
+                                            const h = typeof g.height === 'string' && g.height.includes('%') ? (parseFloat(g.height)/100)*chartHeight : parseFloat(g.height);
+                                            
+                                            if (y >= top && y <= top + h) {{
+                                                hoveredIndex = i;
+                                                break;
+                                            }}
+                                        }}
+                                        window.chartInstances[INSTANCE_ID]._hoveredGridIndex = hoveredIndex;
+                                    }}
+                                }} catch(err) {{}}
                             }} else {{
                                 customLine.style.display = 'none';
+                                window.chartInstances[INSTANCE_ID]._hoveredGridIndex = -1;
                             }}
                         }});
-                        chartDom.addEventListener('mouseleave', function() {{ customLine.style.display = 'none'; }});
+                        chartDom.addEventListener('mouseleave', function() {{ 
+                            customLine.style.display = 'none'; 
+                            window.chartInstances[INSTANCE_ID]._hoveredGridIndex = -1;
+                        }});
                     }}
                     
                     el.chart.on('finished', function() {{
