@@ -376,12 +376,11 @@ class RealtimePlot:
             return
         
         # 将时间戳转换为 ECharts 时间格式（毫秒时间戳）
-        # 不使用时区转换，直接将datetime视为UTC时间
         def datetime_to_ms(x):
-            if isinstance(x, datetime):
-                # 将datetime视为naive UTC时间，不考虑本地时区
-                epoch = datetime(1970, 1, 1)
-                return int((x - epoch).total_seconds() * 1000)
+            if isinstance(x, (datetime, pd.Timestamp)):
+                # 使用标准的 timestamp() 方法，它会自动处理本地时间到 UTC 的转换
+                # 然后四舍五入到最近的毫秒，避免精度带来的1秒偏移
+                return int(round(x.timestamp() * 1000))
             else:
                 return x
         
@@ -420,8 +419,8 @@ class RealtimePlot:
                             time_gap = next_ts - ts
                             if time_gap > max_gap_ms:
                                 # 时间间隔过大，插入 null 值断开连线
-                                # 在下一个点之前插入一个 null 点，时间戳设为下一个点的时间戳
-                                data.append([next_ts, None])
+                                # 在当前点之后 1ms 插入一个 null 点，确保断开连线且不影响下一个点
+                                data.append([ts + 1, None])
                 else:
                     data = valid_data
                 
@@ -472,14 +471,32 @@ class RealtimePlot:
                     self.option['series'][series_idx]['showSymbol'] = True
                     self.option['series'][series_idx]['symbolSize'] = 6
         
-        # 更新数据缩放范围（显示最近的数据）
-        if len(timestamps) > 0:
-            min_time = timestamps[0]
-            max_time = timestamps[-1]
+        # 计算所有信号数据的全局时间范围（确保所有 xAxis 对齐）
+        all_timestamps = []
+        for series_idx in range(len(self.option.get('series', []))):
+            series_data = self.option['series'][series_idx].get('data', [])
+            for point in series_data:
+                if point and len(point) >= 1 and point[0] is not None:
+                    all_timestamps.append(point[0])
+        
+        # 如果没有从 series 中找到时间戳，使用 DataFrame 的时间戳
+        if not all_timestamps and len(timestamps) > 0:
+            all_timestamps = timestamps
+        
+        # 更新所有 xAxis 的时间范围，确保完全对齐
+        if len(all_timestamps) > 0:
+            global_min_time = min(all_timestamps)
+            global_max_time = max(all_timestamps)
+            
+            # 为所有 xAxis 设置相同的 min 和 max，确保时间轴对齐
+            if 'xAxis' in self.option:
+                for x_axis in self.option['xAxis']:
+                    x_axis['min'] = global_min_time
+                    x_axis['max'] = global_max_time
             
             # 更新 dataZoom
             if 'dataZoom' in self.option and len(self.option['dataZoom']) > 0:
-                total_range = max_time - min_time
+                total_range = global_max_time - global_min_time
                 if total_range > 0:
                     # 显示最后N秒的数据
                     window_ms = self.window_seconds * 1000
