@@ -12,6 +12,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from nicegui import ui
 from echart_widget import EChartWidget
+from signal_manager_widget import SignalGroupManager
 
 
 class DynamicChartApp:
@@ -60,8 +61,8 @@ class DynamicChartApp:
         self.start_btn = None
         self.stop_btn = None
         
-        # 信号选择checkbox
-        self.signal_checkboxes = {}
+        # 信号管理组件
+        self.signal_manager = None
     
     def generate_data_point(self):
         """生成一个数据点"""
@@ -142,14 +143,14 @@ class DynamicChartApp:
     
     def on_signal_selection_changed(self):
         """信号选择变化时的回调"""
+        if not self.signal_manager:
+            return
+
         # 更新选中的信号列表
-        self.selected_signals = [
-            signal for signal, checkbox in self.signal_checkboxes.items()
-            if checkbox.value
-        ]
+        self.selected_signals = self.signal_manager.get_selected_signals()
         
         if not self.selected_signals:
-            ui.notify('请至少选择一个信号', type='warning')
+            # ui.notify('请至少选择一个信号', type='warning')
             return
         
         # 构建信号类型配置
@@ -167,7 +168,7 @@ class DynamicChartApp:
         self.recreate_chart(signal_types)
         
         ui.notify(f'已选择 {len(self.selected_signals)} 个信号', type='positive')
-    
+
     def recreate_chart(self, signal_types):
         """重新创建图表"""
         if self.echart_widget is None:
@@ -204,8 +205,8 @@ class DynamicChartApp:
         self.status_label.style('color: #2e7d32; font-weight: bold;')
         
         # 禁用信号选择
-        for checkbox in self.signal_checkboxes.values():
-            checkbox.disable()
+        if self.signal_manager:
+            self.signal_manager.set_enabled(False)
         
         # 启动定时器（每100ms添加一个数据点）
         self.timer = ui.timer(0.1, self.add_data_point)
@@ -252,8 +253,8 @@ class DynamicChartApp:
         self.status_label.style('color: #d32f2f; font-weight: bold;')
         
         # 启用信号选择
-        for checkbox in self.signal_checkboxes.values():
-            checkbox.enable()
+        if self.signal_manager:
+            self.signal_manager.set_enabled(True)
         
         # 显示所有历史数据
         if self.data_history is not None and not self.data_history.empty:
@@ -316,55 +317,33 @@ def main_page():
     app = DynamicChartApp()
     
     # 左侧抽屉（信号选择）
-    with ui.left_drawer(fixed=False, value=False).classes('bg-blue-100').style('width: 300px;') as drawer:
-        with ui.column().classes('w-full p-4 gap-2'):
-            ui.label('📊 信号选择').classes('text-h6 mb-2').style('color: #1976d2;')
-            ui.separator()
-            
-            # 全选/取消全选按钮
-            with ui.row().classes('gap-2'):
-                def select_all():
-                    for checkbox in app.signal_checkboxes.values():
-                        checkbox.value = True
-                    app.on_signal_selection_changed()
-                
-                def deselect_all():
-                    for checkbox in app.signal_checkboxes.values():
-                        checkbox.value = False
-                
-                ui.button('全选', icon='check_box', on_click=select_all).props('size=sm outline')
-                ui.button('清除', icon='clear', on_click=deselect_all).props('size=sm outline')
+    with ui.left_drawer(fixed=False, value=False).classes('bg-slate-50 border-r').style('width: 320px;') as drawer:
+        with ui.column().classes('w-full h-full gap-0'):
+            with ui.row().classes('w-full p-4 items-center justify-between bg-blue-50'):
+                ui.label('📊 信号分组管理').classes('text-lg font-bold').style('color: #1976d2;')
+                ui.button(icon='close', on_click=lambda: drawer.toggle()).props('flat dense').classes('md:hidden')
             
             ui.separator()
             
-            # 信号选择checkbox
-            for signal_name, config in app.all_signals.items():
-                label = config['label']
-                if config['type'] == 'numeric':
-                    unit = config.get('unit', '')
-                    label_text = f"{label} ({unit})" if unit else label
-                    icon = 'show_chart'
-                else:
-                    label_text = f"{label} (状态)"
-                    icon = 'toggle_on'
-                
-                checkbox = ui.checkbox(label_text).props(f'dense')
-                checkbox.on_value_change(lambda: app.on_signal_selection_changed())
-                app.signal_checkboxes[signal_name] = checkbox
+            # 使用新的信号管理组件
+            scroll = ui.scroll_area().classes('flex-grow w-full')
+            with scroll:
+                app.signal_manager = SignalGroupManager(
+                    all_signals=app.all_signals,
+                    on_selection_change=app.on_signal_selection_changed
+                )
+                app.signal_manager.render_sidebar()
             
             ui.separator()
             
             # 提示信息
-            with ui.card().style('background-color: #e3f2fd; padding: 10px;'):
-                ui.html('''
-                <div style="font-size: 12px;">
-                    <b>💡 使用提示：</b><br>
-                    1. 选择要显示的信号<br>
-                    2. 点击"开始"按钮<br>
-                    3. 实时数据滚动显示(30秒)<br>
-                    4. 点击"停止"查看全部历史
-                </div>
-                ''')
+            with ui.card().classes('m-4 bg-blue-50 p-3 shadow-none border'):
+                ui.markdown('''
+**💡 使用提示：**
+1. 在下方创建分组并添加信号
+2. 搜索过滤信号
+3. 勾选信号后点击"开始"
+                ''').classes('text-xs')
     
     # 页眉
     with ui.header(elevated=True).classes('items-center justify-between').style(
@@ -378,6 +357,7 @@ def main_page():
         # 中间：Tab页切换
         with ui.tabs().classes('flex-grow justify-center').style('color: white;') as tabs:
             tab_chart = ui.tab('图表显示', icon='timeline')
+            tab_signals = ui.tab('信号列表', icon='list')
             tab_info = ui.tab('系统信息', icon='info')
         
         # 右侧：时间显示
@@ -429,6 +409,11 @@ def main_page():
         
         with ui.tab_panels(tabs, value=tab_info).classes('w-full flex-grow') as panels:
                 
+                # Tab: 信号列表 (全量)
+                with ui.tab_panel(tab_signals):
+                    if app.signal_manager:
+                        app.signal_manager.render_main_list()
+
                 # Tab 2: 系统信息
                 with ui.tab_panel(tab_info):
                     with ui.card().classes('w-full p-4'):
