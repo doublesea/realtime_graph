@@ -10,12 +10,15 @@ class SignalGroupManager:
         
         # 数据结构: 分组列表
         self.groups: List[Dict[str, Any]] = [
-            {'name': '默认分组', 'signals': list(all_signals.keys()), 'expanded': True}
+            {'name': '默认分组', 'signals': list(all_signals.keys()), 'expanded': False}
         ]
         
         # 记录每个信号的选中状态 (在分组树中使用)
         self.selection: Dict[str, bool] = {sig_id: False for sig_id in all_signals.keys()}
         self.search_query = ''
+        
+        # 当前选中的分组索引 (用于高亮和快速添加)
+        self.active_group_idx = 0
         
         # 全量列表页的选中状态 (用于批量添加)
         self.list_selection: Dict[str, bool] = {sig_id: False for sig_id in all_signals.keys()}
@@ -51,7 +54,7 @@ class SignalGroupManager:
                 with ui.row().classes('gap-0 no-wrap'):
                     ui.button(icon='add_circle', on_click=self._show_add_group_dialog).props('flat dense color=primary').tooltip('添加分组')
                     ui.button(icon='expand', on_click=self.expand_all).props('flat dense').tooltip('全展开')
-                    ui.button(icon='compress', on_click=self.collapse_all).props('flat dense').tooltip('全收缩')
+                    ui.button(icon='compress', on_click=self.collapse_all).props('flat dense').tooltip('全折叠')
                 
                 ui.input(placeholder='搜索...', on_change=lambda e: self._set_search(e.value)) \
                     .classes('flex-grow').props('dense outlined clearable icon=search')
@@ -76,12 +79,15 @@ class SignalGroupManager:
                     
                     with ui.row().classes('items-center gap-2 bg-blue-50 p-2 rounded flex-grow shadow-sm'):
                         ui.label('批量操作:').classes('font-bold text-blue-800')
+                        
+                        # 使用 lambda 动态获取当前选中的分组名，或者直接绑定
                         self.group_select_widget = ui.select(
                             options={i: g['name'] for i, g in enumerate(self.groups)},
-                            value=0
+                            value=self.active_group_idx
                         ).props('outlined options-dense').classes('min-w-[150px] bg-white')
+                        self.group_select_widget.on_value_change(lambda e: self._set_active_group(e.value))
                         
-                        ui.button('添加到分组', icon='add_circle', on_click=lambda: self._add_selected_to_group(self.group_select_widget.value)) \
+                        ui.button('加入选中分组', icon='add_circle', on_click=lambda: self._add_selected_to_group(self.active_group_idx)) \
                             .props('elevated color=primary')
                         
                         ui.button('全选', icon='check_box', on_click=self._select_all_list).props('flat color=primary')
@@ -173,15 +179,19 @@ class SignalGroupManager:
                 if self.search_query and not filtered_signals and self.search_query not in group['name'].lower():
                     continue
 
+                # 根据是否选中设置背景色
+                is_active = (idx == self.active_group_idx)
+                bg_class = 'bg-blue-100 border-blue-400' if is_active else 'border-gray-200'
+                
                 with ui.expansion(value=group.get('expanded', True)) \
-                    .classes('w-full border rounded') as exp:
+                    .classes(f'w-full border rounded transition-colors {bg_class}') as exp:
                     exp.on_value_change(lambda e, g=group: g.update({'expanded': e.value}))
                     self.expansion_widgets.append(exp)
                     group['widget'] = exp
                     
                     with exp.add_slot('header'):
-                        with ui.row().classes('items-center w-full gap-2 no-wrap'):
-                            ui.icon('folder').classes('text-gray-500')
+                        with ui.row().classes('items-center w-full gap-2 no-wrap').on('click', lambda i=idx: self._set_active_group(i)):
+                            ui.icon('folder').classes('text-blue-600' if is_active else 'text-gray-500')
                             ui.label(group['name']).classes('font-bold flex-grow cursor-pointer truncate') \
                                 .on('dblclick', lambda g=group: self._show_rename_group_dialog(g))
                             
@@ -215,8 +225,8 @@ class SignalGroupManager:
                        on_change=lambda e, sid=sig_id: self._on_sig_toggle(sid, e.value)) \
                 .props('dense').classes('scale-90 m-0 p-0')
             with ui.column().classes('gap-0 flex-grow overflow-hidden'):
-                ui.label(label).classes('text-xs font-medium leading-tight truncate w-full').tooltip(label)
-                ui.label(sig_id).classes('text-[10px] text-gray-400 leading-tight truncate w-full')
+                ui.label(sig_id).classes('text-xs font-medium leading-tight truncate w-full').tooltip(label)
+                # ui.label(label).classes('text-[10px] text-gray-400 leading-tight truncate w-full')
             with ui.row().classes('flex-shrink-0 ml-auto gap-0 opacity-0 group-hover:opacity-100 transition-opacity flex-nowrap items-center'):
                 ui.button(icon='arrow_upward', on_click=lambda: self._move_signal(group, s_idx, -1)) \
                     .props('flat dense size=xs').classes('text-gray-400 p-0 w-6')
@@ -228,6 +238,14 @@ class SignalGroupManager:
     def _on_sig_toggle(self, sig_id, value):
         self.selection[sig_id] = value
         self.on_selection_change()
+
+    def _set_active_group(self, idx):
+        """设置当前选中的活跃分组"""
+        self.active_group_idx = idx
+        # 同步更新主列表页的下拉框
+        if self.group_select_widget:
+            self.group_select_widget.value = idx
+        self._render_groups_list()
 
     def _toggle_group_selection(self, group):
         if not group['signals']: return
@@ -279,7 +297,7 @@ class SignalGroupManager:
 
     def _add_group(self, name, dialog):
         if not name: return
-        self.groups.append({'name': name, 'signals': [], 'expanded': True})
+        self.groups.append({'name': name, 'signals': [], 'expanded': False})
         dialog.close()
         self._sync_all_views()
 
