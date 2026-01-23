@@ -209,21 +209,24 @@ class SignalGroupManager:
                                     group_sel_icon = 'check_box_outline_blank'
                                     group_sel_color = 'gray'
 
-                            ui.button(icon=group_sel_icon, on_click=lambda _: self._toggle_group_selection(group)) \
+                            ui.button(icon=group_sel_icon, on_click=lambda _, g=group: self._toggle_group_selection(g)) \
                                 .props(f'flat dense size=sm color={group_sel_color}').tooltip('组内全选/取消')
 
                             ui.label(group['name']).classes('font-bold flex-grow cursor-pointer truncate') \
                                 .on('click', lambda _, i=idx: self._set_active_group(i)) \
-                                .on('dblclick', lambda _, g=group: self._show_rename_group_dialog(g))
+                                .on('dblclick.stop', lambda _, g=group: self._show_rename_group_dialog(g))
                             
                             with ui.row().classes('items-center gap-0 no-wrap'):
-                                ui.button(icon='edit', on_click=lambda _: self._show_rename_group_dialog(group)) \
-                                    .props('flat dense size=sm color=gray').tooltip('重命名')
-                                ui.button(icon='arrow_upward', on_click=lambda _: self._move_group(idx, -1)) \
-                                    .props('flat dense size=sm').classes('text-gray-400')
-                                ui.button(icon='arrow_downward', on_click=lambda _: self._move_group(idx, 1)) \
-                                    .props('flat dense size=sm').classes('text-gray-400')
-                                ui.button(icon='delete', on_click=lambda _: self._delete_group(group)) \
+                                ui.button(icon='edit') \
+                                    .props('flat dense size=sm color=gray').tooltip('重命名') \
+                                    .on('click.stop', lambda _, g=group: self._show_rename_group_dialog(g))
+                                ui.button(icon='arrow_upward') \
+                                    .props('flat dense size=sm').classes('text-gray-400') \
+                                    .on('click.stop', lambda _, i=idx: self._move_group(i, -1))
+                                ui.button(icon='arrow_downward') \
+                                    .props('flat dense size=sm').classes('text-gray-400') \
+                                    .on('click.stop', lambda _, i=idx: self._move_group(i, 1))
+                                ui.button(icon='delete', on_click=lambda _, g=group: self._delete_group(g)) \
                                     .props('flat dense size=sm color=negative').tooltip('删除分组')
                     
                     with ui.column().classes('w-full pl-2 pr-1 pb-1 gap-0'):
@@ -385,6 +388,11 @@ class SignalGroupManager:
         new_idx = idx + direction
         if 0 <= new_idx < len(self.groups):
             self.groups[idx], self.groups[new_idx] = self.groups[new_idx], self.groups[idx]
+            # 保持当前选中分组与其新位置一致
+            if self.active_group_idx == idx:
+                self.active_group_idx = new_idx
+            elif self.active_group_idx == new_idx:
+                self.active_group_idx = idx
             self._sync_all_views()
 
     def _move_signal(self, group, s_idx, direction):
