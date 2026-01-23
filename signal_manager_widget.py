@@ -187,26 +187,43 @@ class SignalGroupManager:
                     .classes(f'w-full border rounded transition-colors {bg_class}') as exp:
                     exp.on_value_change(lambda e, g=group: g.update({'expanded': e.value}))
                     self.expansion_widgets.append(exp)
-                    group['widget'] = exp
                     
                     with exp.add_slot('header'):
-                        with ui.row().classes('items-center w-full gap-2 no-wrap').on('click', lambda i=idx: self._set_active_group(i)):
-                            ui.icon('folder').classes('text-blue-600' if is_active else 'text-gray-500')
+                        # 使用 row 承载头部内容
+                        with ui.row().classes('items-center w-full gap-2 no-wrap'):
+                            # 根据组内信号选中状态显示不同图标，放在最左侧
+                            group_signals = group['signals']
+                            if not group_signals:
+                                group_sel_icon = 'check_box_outline_blank'
+                                group_sel_color = 'gray'
+                            else:
+                                all_sel = all(self.selection.get(sid, False) for sid in group_signals)
+                                any_sel = any(self.selection.get(sid, False) for sid in group_signals)
+                                if all_sel:
+                                    group_sel_icon = 'check_box'
+                                    group_sel_color = 'primary'
+                                elif any_sel:
+                                    group_sel_icon = 'indeterminate_check_box'
+                                    group_sel_color = 'primary'
+                                else:
+                                    group_sel_icon = 'check_box_outline_blank'
+                                    group_sel_color = 'gray'
+
+                            ui.button(icon=group_sel_icon, on_click=lambda _: self._toggle_group_selection(group)) \
+                                .props(f'flat dense size=sm color={group_sel_color}').tooltip('组内全选/取消')
+
                             ui.label(group['name']).classes('font-bold flex-grow cursor-pointer truncate') \
-                                .on('dblclick', lambda g=group: self._show_rename_group_dialog(g))
+                                .on('click', lambda _, i=idx: self._set_active_group(i)) \
+                                .on('dblclick', lambda _, g=group: self._show_rename_group_dialog(g))
                             
                             with ui.row().classes('items-center gap-0 no-wrap'):
-                                ui.button(icon='done_all', on_click=lambda g=group: self._toggle_group_selection(g)) \
-                                    .props('flat dense size=sm color=gray').tooltip('组内全选/取消')
-                                ui.button(icon='edit', on_click=lambda g=group: self._show_rename_group_dialog(g)) \
+                                ui.button(icon='edit', on_click=lambda _: self._show_rename_group_dialog(group)) \
                                     .props('flat dense size=sm color=gray').tooltip('重命名')
-                                ui.button(icon='arrow_upward', on_click=lambda g_idx=idx: self._move_group(g_idx, -1)) \
+                                ui.button(icon='arrow_upward', on_click=lambda _: self._move_group(idx, -1)) \
                                     .props('flat dense size=sm').classes('text-gray-400')
-                                ui.button(icon='arrow_downward', on_click=lambda g_idx=idx: self._move_group(g_idx, 1)) \
+                                ui.button(icon='arrow_downward', on_click=lambda _: self._move_group(idx, 1)) \
                                     .props('flat dense size=sm').classes('text-gray-400')
-                                ui.button(icon='add', on_click=lambda g=group: self._show_add_signal_dialog(g)) \
-                                    .props('flat dense size=sm color=primary').tooltip('添加信号')
-                                ui.button(icon='delete', on_click=lambda g=group: self._delete_group(g)) \
+                                ui.button(icon='delete', on_click=lambda _: self._delete_group(group)) \
                                     .props('flat dense size=sm color=negative').tooltip('删除分组')
                     
                     with ui.column().classes('w-full pl-2 pr-1 pb-1 gap-0'):
@@ -241,9 +258,11 @@ class SignalGroupManager:
 
     def _set_active_group(self, idx):
         """设置当前选中的活跃分组"""
+        if self.active_group_idx == idx:
+            return
         self.active_group_idx = idx
         # 同步更新主列表页的下拉框
-        if self.group_select_widget:
+        if self.group_select_widget and self.group_select_widget.value != idx:
             self.group_select_widget.value = idx
         self._render_groups_list()
 
@@ -266,14 +285,27 @@ class SignalGroupManager:
 
     def _rename_group(self, group, new_name, dialog):
         if not new_name: return
+        if new_name == group['name']:
+            dialog.close()
+            return
+        # 检查重名
+        if any(g['name'] == new_name for g in self.groups):
+            ui.notify(f'分组名称 "{new_name}" 已存在', type='warning')
+            return
+            
         group['name'] = new_name
         dialog.close()
+        # 更新活跃分组索引，防止重命名后高亮错位（如果 groups 顺序没变其实不需要，但为了保险）
+        self.active_group_idx = self.groups.index(group)
         self._sync_all_views()
 
     def _sync_all_views(self):
         """同步所有视图的 UI"""
         if self.group_select_widget:
+            # 更新选项，但避免触发不必要的 value_change
             self.group_select_widget.options = {i: g['name'] for i, g in enumerate(self.groups)}
+            if self.group_select_widget.value != self.active_group_idx:
+                self.group_select_widget.value = self.active_group_idx
             self.group_select_widget.update()
         self._render_groups_list()
         self._render_all_list_content()
@@ -297,6 +329,10 @@ class SignalGroupManager:
 
     def _add_group(self, name, dialog):
         if not name: return
+        # 检查重名
+        if any(g['name'] == name for g in self.groups):
+            ui.notify(f'分组名称 "{name}" 已存在', type='warning')
+            return
         self.groups.append({'name': name, 'signals': [], 'expanded': False})
         dialog.close()
         self._sync_all_views()
